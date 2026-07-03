@@ -1,13 +1,14 @@
 services:
   ecommerce-db:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: postgres:15-alpine
     environment:
-      - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=EnterpriseDbPass123!
+      - POSTGRES_DB=ecommerce_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=EnterpriseDbPass123!
     ports:
-      - "1434:1433"
+      - "5433:5432"
     volumes:
-      - ecommerce-db-data:/var/opt/mssql
+      - ecommerce-db-data:/var/lib/postgresql/data
 
   ecommerce-api:
     build:
@@ -16,7 +17,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ConnectionStrings__DefaultConnection=Server=ecommerce-db;Database=ECommerceDb;User Id=sa;Password=EnterpriseDbPass123!;TrustServerCertificate=True;
+      - ConnectionStrings__DefaultConnection=Host=ecommerce-db;Port=5432;Database=ecommerce_db;Username=postgres;Password=EnterpriseDbPass123!
     depends_on:
       - ecommerce-db
 

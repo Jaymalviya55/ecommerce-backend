@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: ecommerce-api
+    env: docker
+    region: ohio
+    plan: free
+    dockerfilePath: ./Dockerfile
+    branch: main
+    envVars:
+      - key: ConnectionStrings__DefaultConnection
+        fromDatabase:
+          name: ecommerce-db
+          property: connectionString
+      - key: JwtSettings__Secret
+        generateValue: true
+      - key: JwtSettings__Issuer
+        value: https://ecommerce-api.onrender.com
+      - key: JwtSettings__Audience
+        value: https://ecommerce-ui.vercel.app
+
+databases:
+  - name: ecommerce-db
+    region: ohio
+    plan: free
+    databaseName: ecommercedb
+    user: renderuser

@@ -2,8 +2,9 @@ namespace ECommerce.Infrastructure.Data;
 
 using ECommerce.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 
-public class ECommerceDbContext : DbContext
+public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
 {
     public ECommerceDbContext(DbContextOptions<ECommerceDbContext> options) : base(options) { }
 
@@ -13,6 +14,7 @@ public class ECommerceDbContext : DbContext
     public DbSet<CartItem> CartItems { get; set; } = null!;
     public DbSet<Order> Orders { get; set; } = null!;
     public DbSet<OrderItem> OrderItems { get; set; } = null!;
+    public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
