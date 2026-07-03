@@ -1,0 +1,24 @@
+services:
+  ecommerce-db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=EnterpriseDbPass123!
+    ports:
+      - "1434:1433"
+    volumes:
+      - ecommerce-db-data:/var/opt/mssql
+
+  ecommerce-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ConnectionStrings__DefaultConnection=Server=ecommerce-db;Database=ECommerceDb;User Id=sa;Password=EnterpriseDbPass123!;TrustServerCertificate=True;
+    depends_on:
+      - ecommerce-db
+
+volumes:
+  ecommerce-db-data:
