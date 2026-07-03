@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,11 +33,26 @@ builder.Services.AddCors(options =>
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 // Convert Render's postgres:// URL to ADO.NET format if necessary
-if (!string.IsNullOrEmpty(connectionString) && connectionString.StartsWith("postgres://"))
+if (!string.IsNullOrEmpty(connectionString))
 {
-    var databaseUri = new Uri(connectionString);
-    var userInfo = databaseUri.UserInfo.Split(':');
-    connectionString = $"Host={databaseUri.Host};Port={databaseUri.Port};Database={databaseUri.LocalPath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};Ssl Mode=Require;Trust Server Certificate=true;";
+    if (connectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) || 
+        connectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var databaseUri = new Uri(connectionString);
+        var userInfo = databaseUri.UserInfo.Split(':');
+        
+        var npgsqlBuilder = new NpgsqlConnectionStringBuilder
+        {
+            Host = databaseUri.Host,
+            Port = databaseUri.IsDefaultPort ? 5432 : databaseUri.Port,
+            Username = userInfo[0],
+            Password = userInfo.Length > 1 ? userInfo[1] : "",
+            Database = databaseUri.LocalPath.TrimStart('/'),
+            SslMode = SslMode.Require,
+            TrustServerCertificate = true
+        };
+        connectionString = npgsqlBuilder.ToString();
+    }
 }
 
 builder.Services.AddDbContext<ECommerceDbContext>(options =>
