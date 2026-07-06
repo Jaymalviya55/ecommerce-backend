@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using ECommerce.Domain.Entities;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
 
 namespace ECommerce.Api.Services;
@@ -10,13 +11,15 @@ namespace ECommerce.Api.Services;
 public class TokenService : ITokenService
 {
     private readonly IConfiguration _config;
+    private readonly UserManager<ApplicationUser> _userManager;
 
-    public TokenService(IConfiguration config)
+    public TokenService(IConfiguration config, UserManager<ApplicationUser> userManager)
     {
         _config = config;
+        _userManager = userManager;
     }
 
-    public string GenerateAccessToken(ApplicationUser user)
+    public async Task<string> GenerateAccessToken(ApplicationUser user)
     {
         var jwtSettings = _config.GetSection("JwtSettings");
         var secretKey = jwtSettings["Secret"];
@@ -30,6 +33,12 @@ public class TokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Email, user.Email!),
             new Claim("uid", user.Id)
         };
+
+        var roles = await _userManager.GetRolesAsync(user);
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
 
         var token = new JwtSecurityToken(
             issuer: jwtSettings["Issuer"],
