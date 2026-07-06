@@ -120,7 +120,7 @@ public class AuthController : ControllerBase
 
     private async Task<IActionResult> GenerateTokenResponse(ApplicationUser user)
     {
-        var jwtToken = _tokenService.GenerateAccessToken(user);
+        var jwtToken = await _tokenService.GenerateAccessToken(user);
         
         var jwtId = new JwtSecurityTokenHandler().ReadJwtToken(jwtToken)
             .Claims.First(x => x.Type == JwtRegisteredClaimNames.Jti).Value;
@@ -137,6 +137,21 @@ public class AuthController : ControllerBase
         {
             AccessToken = jwtToken,
             RefreshToken = refreshToken.Token
+        });
+    }
+
+    [HttpGet("test-roles")]
+    public async Task<IActionResult> TestRoles()
+    {
+        var adminEmail = "admin@enterprisestore.com";
+        var adminUser = await _userManager.FindByEmailAsync(adminEmail);
+        if (adminUser == null) return NotFound("Admin user not found in DB.");
+        
+        var roles = await _userManager.GetRolesAsync(adminUser);
+        return Ok(new { 
+            Email = adminEmail, 
+            RolesInDb = roles, 
+            UserObj = new { adminUser.Id, adminUser.UserName }
         });
     }
 }
