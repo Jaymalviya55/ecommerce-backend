@@ -110,19 +110,6 @@ using (var scope = app.Services.CreateScope())
     {
         await roleManager.CreateAsync(new IdentityRole("Admin"));
     }
-
-    var adminEmail = "admin@enterprisestore.com";
-    var adminUser = await userManager.FindByEmailAsync(adminEmail);
-    if (adminUser == null)
-    {
-        adminUser = new ApplicationUser { UserName = adminEmail, Email = adminEmail };
-        await userManager.CreateAsync(adminUser, "AdminPass123!");
-    }
-    
-    if (!await userManager.IsInRoleAsync(adminUser, "Admin"))
-    {
-        await userManager.AddToRoleAsync(adminUser, "Admin");
-    }
 }
 
 // Configure the HTTP request pipeline.

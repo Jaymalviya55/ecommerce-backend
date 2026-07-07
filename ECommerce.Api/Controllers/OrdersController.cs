@@ -4,16 +4,20 @@ using ECommerce.Domain.Entities;
 using ECommerce.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Razorpay.Api;
 
 [ApiController]
 [Route("api/[controller]")]
 public class OrdersController : ControllerBase
 {
     private readonly ECommerceDbContext _context;
+    private readonly IConfiguration _configuration;
 
-    public OrdersController(ECommerceDbContext context)
+    public OrdersController(ECommerceDbContext context, IConfiguration configuration)
     {
         _context = context;
+        _configuration = configuration;
     }
 
     [HttpPost("checkout")]
@@ -30,7 +34,7 @@ public class OrdersController : ControllerBase
         }
 
         // 2. Create the Order
-        var order = new Order
+        var order = new ECommerce.Domain.Entities.Order
         {
             CustomerEmail = request.Email,
             ShippingAddress = request.Address,
@@ -58,14 +62,41 @@ public class OrdersController : ControllerBase
             // product.StockQuantity -= orderItem.Quantity;
         }
 
+        // 4. Create Order on Razorpay Servers
+        string keyId = _configuration["RazorpaySettings:KeyId"] ?? "";
+        string keySecret = _configuration["RazorpaySettings:KeySecret"] ?? "";
+        
+        var client = new RazorpayClient(keyId, keySecret);
+        
+        // Razorpay expects the amount in the smallest currency sub-unit (Paise for INR, so * 100)
+        long amountInPaise = (long)(order.TotalAmount * 100);
+
+        var options = new Dictionary<string, object>
+        {
+            { "amount", amountInPaise },
+            { "currency", "INR" },
+            { "receipt", $"rcpt_{Guid.NewGuid().ToString().Substring(0, 8)}" }
+        };
+
+        Razorpay.Api.Order razorpayOrder = client.Order.Create(options);
+        
+        // Save the Razorpay Order ID securely in our database
+        order.RazorpayOrderId = razorpayOrder["id"].ToString();
+
         _context.Orders.Add(order);
 
-        // 4. Delete the Cart (it's been converted to an order)
+        // 5. Delete the Cart (it's been converted to an order)
         _context.Carts.Remove(cart);
 
         await _context.SaveChangesAsync();
 
-        return Ok(new { OrderId = order.Id, TotalAmount = order.TotalAmount, Status = order.Status.ToString() });
+        // Return the Razorpay Order ID and Public Key so the frontend can launch the modal
+        return Ok(new { 
+            OrderId = order.Id, 
+            RazorpayOrderId = order.RazorpayOrderId,
+            TotalAmount = order.TotalAmount,
+            KeyId = keyId
+        });
     }
 }
 
