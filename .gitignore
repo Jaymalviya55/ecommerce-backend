@@ -482,5 +482,4 @@ $RECYCLE.BIN/
 *.swp
 
 # Application Secrets (Protect Razorpay Keys)
-appsettings.json
 appsettings.Development.json
