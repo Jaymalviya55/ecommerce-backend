@@ -76,6 +76,34 @@ public class CartsController : ControllerBase
         return Ok(updatedCart);
     }
 
+    [HttpPut("{sessionId}/items/{productId}")]
+    public async Task<IActionResult> UpdateItemQuantity(string sessionId, int productId, [FromBody] UpdateQuantityRequest request)
+    {
+        var cart = await _context.Carts
+            .Include(c => c.Items)
+            .ThenInclude(i => i.Product)
+            .FirstOrDefaultAsync(c => c.SessionId == sessionId);
+
+        if (cart == null) return NotFound();
+
+        var item = cart.Items.FirstOrDefault(i => i.ProductId == productId);
+        if (item != null)
+        {
+            if (request.Quantity <= 0)
+            {
+                _context.CartItems.Remove(item);
+            }
+            else
+            {
+                item.Quantity = request.Quantity;
+            }
+            cart.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(cart);
+    }
+
     [HttpDelete("{sessionId}/items/{productId}")]
     public async Task<IActionResult> RemoveItemFromCart(string sessionId, int productId)
     {
@@ -100,5 +128,10 @@ public class CartsController : ControllerBase
 public class AddToCartRequest
 {
     public int ProductId { get; set; }
+    public int Quantity { get; set; }
+}
+
+public class UpdateQuantityRequest
+{
     public int Quantity { get; set; }
 }
