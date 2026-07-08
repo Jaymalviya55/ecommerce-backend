@@ -30,5 +30,8 @@ public class Order
     // We store it here for accounting and refund purposes.
     public string RazorpayPaymentId { get; set; } = string.Empty;
 
+    public string? TrackingNumber { get; set; }
+    public string? CarrierName { get; set; }
+
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
 }
