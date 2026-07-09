@@ -222,6 +222,8 @@ public class OrdersController : ControllerBase
                 o.OrderDate,
                 o.TotalAmount,
                 Status = o.Status.ToString(),
+                o.TrackingNumber,
+                o.CarrierName,
                 Items = o.Items.Select(i => new {
                     i.ProductId,
                     ProductName = i.Product != null ? i.Product.Name : "Unknown Product",
