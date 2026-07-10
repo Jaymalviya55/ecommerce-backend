@@ -15,6 +15,7 @@ public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Order> Orders { get; set; } = null!;
     public DbSet<OrderItem> OrderItems { get; set; } = null!;
     public DbSet<RefreshToken> RefreshTokens { get; set; } = null!;
+    public DbSet<Review> Reviews { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +25,11 @@ public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
             .HasMany(c => c.Products)
             .WithOne(p => p.Category)
             .HasForeignKey(p => p.CategoryId);
+
+        // One review per user per product
+        modelBuilder.Entity<Review>()
+            .HasIndex(r => new { r.ProductId, r.UserId })
+            .IsUnique();
 
         // Fix Decimal warnings
         modelBuilder.Entity<Product>()
