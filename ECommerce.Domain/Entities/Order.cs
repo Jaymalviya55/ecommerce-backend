@@ -13,7 +13,11 @@ public class Order
 {
     public int Id { get; set; }
     
-    // Guest Checkout Details
+    // Optional link to registered user (null for guest checkout)
+    public string? UserId { get; set; }
+    public ApplicationUser? User { get; set; }
+    
+    // Guest Checkout Details (Fallback for guests, or snapshot for registered users)
     public string CustomerEmail { get; set; } = string.Empty;
     public string ShippingAddress { get; set; } = string.Empty;
     
