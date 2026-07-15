@@ -5,6 +5,7 @@ using ECommerce.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 using System.IdentityModel.Tokens.Jwt;
 
 namespace ECommerce.Api.Controllers;
@@ -140,6 +141,40 @@ public class AuthController : ControllerBase
         });
     }
 
+    [Authorize(Roles = "Admin")]
+    [HttpGet("users")]
+    public async Task<IActionResult> GetAllUsers()
+    {
+        var users = await _userManager.Users.ToListAsync();
+        var userList = new List<object>();
+
+        foreach (var user in users)
+        {
+            var roles = await _userManager.GetRolesAsync(user);
+            userList.Add(new { user.Id, user.Email, Roles = roles });
+        }
+
+        return Ok(userList);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("assign-role")]
+    public async Task<IActionResult> AssignRole([FromBody] AssignRoleRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null) return NotFound("User not found.");
+
+        var validRoles = new[] { "Admin", "Customer", "SupportAgent", "FulfillmentStaff" };
+        if (!validRoles.Contains(request.Role)) return BadRequest("Invalid role.");
+
+        if (!await _userManager.IsInRoleAsync(user, request.Role))
+        {
+            await _userManager.AddToRoleAsync(user, request.Role);
+        }
+
+        return Ok(new { Message = $"Role {request.Role} assigned to {request.Email}" });
+    }
+
     [HttpGet("test-roles")]
     public async Task<IActionResult> TestRoles()
     {
@@ -154,4 +189,10 @@ public class AuthController : ControllerBase
             UserObj = new { adminUser.Id, adminUser.UserName }
         });
     }
+}
+
+public class AssignRoleRequest
+{
+    public string Email { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
 }

@@ -25,6 +25,7 @@ public class OrdersController : ControllerBase
     [HttpPost("checkout")]
     public async Task<IActionResult> Checkout([FromBody] CheckoutRequest request)
     {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         // 1. Validate the cart exists and has items
         var cart = await _context.Carts
             .Include(c => c.Items)
@@ -38,6 +39,7 @@ public class OrdersController : ControllerBase
         // 2. Create the Order
         var order = new ECommerce.Domain.Entities.Order
         {
+            UserId = userId,
             CustomerEmail = request.Email,
             ShippingAddress = request.Address,
             Status = OrderStatus.Pending,
@@ -101,7 +103,7 @@ public class OrdersController : ControllerBase
         });
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,SupportAgent")]
     [HttpGet("all")]
     public async Task<IActionResult> GetAllOrders()
     {
@@ -129,7 +131,34 @@ public class OrdersController : ControllerBase
         return Ok(orders);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,FulfillmentStaff")]
+    [HttpGet("fulfillment")]
+    public async Task<IActionResult> GetFulfillmentOrders()
+    {
+        var orders = await _context.Orders
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+            .Where(o => o.Status == OrderStatus.Paid || o.Status == OrderStatus.Pending)
+            .OrderBy(o => o.OrderDate)
+            .Select(o => new {
+                o.Id,
+                o.OrderDate,
+                o.CustomerEmail,
+                o.ShippingAddress,
+                o.TotalAmount,
+                Status = o.Status.ToString(),
+                Items = o.Items.Select(i => new {
+                    i.ProductId,
+                    ProductName = i.Product != null ? i.Product.Name : "Unknown Product",
+                    i.Quantity
+                })
+            })
+            .ToListAsync();
+
+        return Ok(orders);
+    }
+
+    [Authorize(Roles = "Admin,FulfillmentStaff")]
     [HttpPut("{id}/ship")]
     public async Task<IActionResult> ShipOrder(int id, [FromBody] ShipOrderRequest request)
     {
@@ -149,7 +178,7 @@ public class OrdersController : ControllerBase
         return Ok(new { Message = "Order marked as shipped." });
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,FulfillmentStaff")]
     [HttpPut("{id}/deliver")]
     public async Task<IActionResult> DeliverOrder(int id)
     {
@@ -166,7 +195,7 @@ public class OrdersController : ControllerBase
         return Ok(new { Message = "Order marked as delivered." });
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,SupportAgent,Customer")]
     [HttpPut("{id}/cancel")]
     public async Task<IActionResult> CancelOrder(int id)
     {
@@ -206,16 +235,33 @@ public class OrdersController : ControllerBase
     [HttpGet("my-orders")]
     public async Task<IActionResult> GetMyOrders()
     {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var email = User.FindFirst(ClaimTypes.Email)?.Value;
-        if (string.IsNullOrEmpty(email))
+        
+        if (string.IsNullOrEmpty(userId) && string.IsNullOrEmpty(email))
         {
-            return Unauthorized("User email not found in token.");
+            return Unauthorized("User identity not found in token.");
         }
 
-        var orders = await _context.Orders
+        var query = _context.Orders
             .Include(o => o.Items)
                 .ThenInclude(i => i.Product)
-            .Where(o => o.CustomerEmail == email)
+            .AsQueryable();
+            
+        if (!string.IsNullOrEmpty(userId) && !string.IsNullOrEmpty(email))
+        {
+            query = query.Where(o => o.UserId == userId || o.CustomerEmail == email);
+        }
+        else if (!string.IsNullOrEmpty(userId))
+        {
+            query = query.Where(o => o.UserId == userId);
+        }
+        else
+        {
+            query = query.Where(o => o.CustomerEmail == email);
+        }
+
+        var orders = await query
             .OrderByDescending(o => o.OrderDate)
             .Select(o => new {
                 o.Id,
