@@ -195,7 +195,7 @@ public class OrdersController : ControllerBase
         return Ok(new { Message = "Order marked as delivered." });
     }
 
-    [Authorize(Roles = "Admin,SupportAgent,Customer")]
+    [Authorize]
     [HttpPut("{id}/cancel")]
     public async Task<IActionResult> CancelOrder(int id)
     {
@@ -204,6 +204,15 @@ public class OrdersController : ControllerBase
             .FirstOrDefaultAsync(o => o.Id == id);
             
         if (order == null) return NotFound("Order not found.");
+
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var email = User.FindFirst(ClaimTypes.Email)?.Value;
+        var isAdminOrSupport = User.IsInRole("Admin") || User.IsInRole("SupportAgent");
+
+        if (!isAdminOrSupport && order.UserId != userId && order.CustomerEmail != email)
+        {
+            return Forbid(); // Return 403 if they don't own the order (by ID or Email)
+        }
 
         if (order.Status == OrderStatus.Shipped || order.Status == OrderStatus.Delivered)
         {
