@@ -45,6 +45,7 @@ public class TicketsController : ControllerBase
             SenderEmail = email,
             IsStaff = false,
             Message = request.Message,
+            AttachmentUrl = request.AttachmentUrl,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -95,6 +96,7 @@ public class TicketsController : ControllerBase
                 t.Id,
                 t.CustomerEmail,
                 t.Subject,
+                t.AssignedToEmail,
                 Status = t.Status.ToString(),
                 Priority = t.Priority.ToString(),
                 t.UpdatedAt
@@ -122,18 +124,27 @@ public class TicketsController : ControllerBase
             return Forbid(); // Customer can only see their own tickets
         }
 
+        var messages = ticket.Messages.OrderBy(m => m.CreatedAt).AsEnumerable();
+        if (!isStaff)
+        {
+            messages = messages.Where(m => !m.IsInternalNote);
+        }
+
         var result = new {
             ticket.Id,
             ticket.CustomerEmail,
             ticket.Subject,
+            ticket.AssignedToEmail,
             Status = ticket.Status.ToString(),
             Priority = ticket.Priority.ToString(),
             ticket.CreatedAt,
             ticket.UpdatedAt,
-            Messages = ticket.Messages.OrderBy(m => m.CreatedAt).Select(m => new {
+            Messages = messages.Select(m => new {
                 m.Id,
                 m.SenderEmail,
                 m.Message,
+                m.AttachmentUrl,
+                m.IsInternalNote,
                 m.IsStaff,
                 m.CreatedAt
             })
@@ -157,17 +168,24 @@ public class TicketsController : ControllerBase
             return Forbid();
         }
 
+        if (request.IsInternalNote && !isStaff)
+        {
+            return Forbid();
+        }
+
         var message = new TicketMessage
         {
             SupportTicketId = id,
             SenderEmail = email ?? "Unknown",
             IsStaff = isStaff,
             Message = request.Message,
+            AttachmentUrl = request.AttachmentUrl,
+            IsInternalNote = request.IsInternalNote,
             CreatedAt = DateTime.UtcNow
         };
 
         ticket.UpdatedAt = DateTime.UtcNow;
-        if (isStaff && ticket.Status == TicketStatus.Open)
+        if (isStaff && ticket.Status == TicketStatus.Open && !request.IsInternalNote)
         {
             ticket.Status = TicketStatus.InProgress;
         }
@@ -175,9 +193,16 @@ public class TicketsController : ControllerBase
         _context.TicketMessages.Add(message);
         await _context.SaveChangesAsync();
 
-        var messageResponse = new { message.Id, message.SenderEmail, message.Message, message.IsStaff, message.CreatedAt };
+        var messageResponse = new { message.Id, message.SenderEmail, message.Message, message.AttachmentUrl, message.IsInternalNote, message.IsStaff, message.CreatedAt };
         
-        await _hubContext.Clients.Group($"Ticket_{id}").SendAsync("ReceiveMessage", messageResponse);
+        if (message.IsInternalNote)
+        {
+            await _hubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", messageResponse);
+        }
+        else
+        {
+            await _hubContext.Clients.Group($"Ticket_{id}").SendAsync("ReceiveMessage", messageResponse);
+        }
 
         return Ok(messageResponse);
     }
@@ -206,12 +231,40 @@ public class TicketsController : ControllerBase
 
         return Ok(new { Message = "Ticket resolved" });
     }
+
+    [Authorize(Roles = "Admin,SupportAgent")]
+    [HttpPut("{id}/claim")]
+    public async Task<IActionResult> ClaimTicket(int id)
+    {
+        var ticket = await _context.SupportTickets.FindAsync(id);
+        if (ticket == null) return NotFound("Ticket not found");
+
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name;
+        ticket.AssignedToEmail = email;
+        ticket.UpdatedAt = DateTime.UtcNow;
+        if (ticket.Status == TicketStatus.Open) ticket.Status = TicketStatus.InProgress;
+
+        await _context.SaveChangesAsync();
+
+        var systemMessage = new {
+            Id = -1,
+            SenderEmail = "System",
+            Message = $"Ticket claimed by {email}",
+            IsInternalNote = true,
+            IsStaff = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        await _hubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", systemMessage);
+
+        return Ok(ticket);
+    }
 }
 
 public class CreateTicketRequest
 {
     public string Subject { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
+    public string? AttachmentUrl { get; set; }
     public TicketPriority Priority { get; set; } = TicketPriority.Medium;
     public int? OrderId { get; set; }
 }
@@ -219,4 +272,6 @@ public class CreateTicketRequest
 public class ReplyTicketRequest
 {
     public string Message { get; set; } = string.Empty;
+    public string? AttachmentUrl { get; set; }
+    public bool IsInternalNote { get; set; } = false;
 }

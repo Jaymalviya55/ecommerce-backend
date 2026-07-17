@@ -27,6 +27,9 @@ public class SupportTicket
     // Optional order association
     public int? OrderId { get; set; }
     
+    // Agent assignment
+    public string? AssignedToEmail { get; set; }
+    
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
