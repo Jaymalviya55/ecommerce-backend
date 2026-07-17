@@ -26,6 +26,10 @@ public class SupportChatHub : Hub
             if (ticket != null && (isStaff || ticket.CustomerEmail == email))
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"Ticket_{ticketId}");
+                if (isStaff)
+                {
+                    await Groups.AddToGroupAsync(Context.ConnectionId, $"StaffTicket_{ticketId}");
+                }
             }
             else
             {
