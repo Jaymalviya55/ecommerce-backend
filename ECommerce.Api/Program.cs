@@ -19,6 +19,7 @@ builder.Services.AddControllers()
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<ECommerce.Api.Services.ITokenService, ECommerce.Api.Services.TokenService>();
+builder.Services.AddHttpClient<ECommerce.Api.Services.IAiSupportService, ECommerce.Api.Services.AiSupportService>();
 
 // Setup CORS
 builder.Services.AddCors(options =>
