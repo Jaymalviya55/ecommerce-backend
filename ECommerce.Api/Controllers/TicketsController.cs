@@ -106,6 +106,58 @@ public class TicketsController : ControllerBase
         return Ok(tickets);
     }
 
+    [Authorize(Roles = "Admin,SupportAgent")]
+    [HttpGet("analytics")]
+    public async Task<IActionResult> GetAnalytics()
+    {
+        var allTickets = await _context.SupportTickets.ToListAsync();
+        
+        var totalTickets = allTickets.Count;
+        var openTickets = allTickets.Count(t => t.Status == TicketStatus.Open || t.Status == TicketStatus.InProgress);
+        var resolvedTickets = allTickets.Count(t => t.Status == TicketStatus.Resolved || t.Status == TicketStatus.Closed);
+        
+        var resolvedList = allTickets.Where(t => t.Status == TicketStatus.Resolved || t.Status == TicketStatus.Closed).ToList();
+        double avgResolutionTimeHours = 0;
+        if (resolvedList.Any())
+        {
+            avgResolutionTimeHours = resolvedList.Average(t => (t.UpdatedAt - t.CreatedAt).TotalHours);
+        }
+
+        var ticketsByStatus = allTickets
+            .GroupBy(t => t.Status.ToString())
+            .Select(g => new { name = g.Key, value = g.Count() })
+            .ToList();
+
+        var agentPerformance = allTickets
+            .Where(t => !string.IsNullOrEmpty(t.AssignedToEmail))
+            .GroupBy(t => t.AssignedToEmail)
+            .Select(g => new {
+                agent = g.Key,
+                resolved = g.Count(t => t.Status == TicketStatus.Resolved || t.Status == TicketStatus.Closed),
+                open = g.Count(t => t.Status == TicketStatus.Open || t.Status == TicketStatus.InProgress)
+            })
+            .OrderByDescending(a => a.resolved)
+            .ToList();
+
+        var last7Days = Enumerable.Range(0, 7).Select(i => DateTime.UtcNow.Date.AddDays(-i)).Reverse().ToList();
+        var ticketsByDay = last7Days.Select(date => new {
+            date = date.ToString("MMM dd"),
+            tickets = allTickets.Count(t => t.CreatedAt.Date == date)
+        }).ToList();
+
+        var analytics = new {
+            totalTickets,
+            openTickets,
+            resolvedTickets,
+            avgResolutionTimeHours = Math.Round(avgResolutionTimeHours, 1),
+            ticketsByStatus,
+            agentPerformance,
+            ticketsByDay
+        };
+
+        return Ok(analytics);
+    }
+
     [Authorize]
     [HttpGet("{id}")]
     public async Task<IActionResult> GetTicket(int id)
