@@ -33,5 +33,7 @@ public class SupportTicket
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public bool IsHumanRequested { get; set; } = false;
+
     public ICollection<TicketMessage> Messages { get; set; } = new List<TicketMessage>();
 }

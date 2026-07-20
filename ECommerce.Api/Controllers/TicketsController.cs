@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 using ECommerce.Api.Hubs;
+using ECommerce.Api.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -15,11 +17,15 @@ public class TicketsController : ControllerBase
 {
     private readonly ECommerceDbContext _context;
     private readonly IHubContext<SupportChatHub> _hubContext;
+    private readonly IAiSupportService _aiService;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public TicketsController(ECommerceDbContext context, IHubContext<SupportChatHub> hubContext)
+    public TicketsController(ECommerceDbContext context, IHubContext<SupportChatHub> hubContext, IAiSupportService aiService, IServiceScopeFactory scopeFactory)
     {
         _context = context;
         _hubContext = hubContext;
+        _aiService = aiService;
+        _scopeFactory = scopeFactory;
     }
 
     [Authorize]
@@ -97,6 +103,7 @@ public class TicketsController : ControllerBase
                 t.CustomerEmail,
                 t.Subject,
                 t.AssignedToEmail,
+                t.IsHumanRequested,
                 Status = t.Status.ToString(),
                 Priority = t.Priority.ToString(),
                 t.UpdatedAt
@@ -187,6 +194,7 @@ public class TicketsController : ControllerBase
             ticket.CustomerEmail,
             ticket.Subject,
             ticket.AssignedToEmail,
+            ticket.IsHumanRequested,
             Status = ticket.Status.ToString(),
             Priority = ticket.Priority.ToString(),
             ticket.CreatedAt,
@@ -254,9 +262,126 @@ public class TicketsController : ControllerBase
         else
         {
             await _hubContext.Clients.Group($"Ticket_{id}").SendAsync("ReceiveMessage", messageResponse);
+            // Also notify staff of a customer reply
+            await _hubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", messageResponse);
+        }
+
+        // If customer replied and AI is active
+        if (!isStaff && !ticket.IsHumanRequested)
+        {
+            // Background process the AI response
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var scopedContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+                    var scopedAiService = scope.ServiceProvider.GetRequiredService<IAiSupportService>();
+                    var scopedHubContext = scope.ServiceProvider.GetRequiredService<IHubContext<SupportChatHub>>();
+
+                    var scopedTicket = await scopedContext.SupportTickets
+                        .Include(t => t.Messages)
+                        .FirstOrDefaultAsync(t => t.Id == id);
+
+                    if (scopedTicket != null)
+                    {
+                        var aiReply = await scopedAiService.HandleCustomerMessageAsync(scopedTicket);
+                        
+                        var aiMessage = new TicketMessage
+                        {
+                            SupportTicketId = id,
+                            SenderEmail = "Exousia AI",
+                            IsStaff = true,
+                            Message = aiReply,
+                            IsInternalNote = false,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        
+                        scopedContext.TicketMessages.Add(aiMessage);
+                        await scopedContext.SaveChangesAsync();
+
+                        var aiResponseData = new { aiMessage.Id, aiMessage.SenderEmail, aiMessage.Message, aiMessage.AttachmentUrl, aiMessage.IsInternalNote, aiMessage.IsStaff, aiMessage.CreatedAt };
+                        await scopedHubContext.Clients.Group($"Ticket_{id}").SendAsync("ReceiveMessage", aiResponseData);
+                        await scopedHubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", aiResponseData);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("AI Reply Error: " + ex.Message);
+                }
+            });
         }
 
         return Ok(messageResponse);
+    }
+
+    [Authorize]
+    [HttpPut("{id}/escalate")]
+    public async Task<IActionResult> EscalateTicket(int id)
+    {
+        var ticket = await _context.SupportTickets.Include(t => t.Messages).FirstOrDefaultAsync(t => t.Id == id);
+        if (ticket == null) return NotFound("Ticket not found");
+
+        var email = User.FindFirstValue(ClaimTypes.Email) ?? User.Identity?.Name;
+        if (ticket.CustomerEmail != email) return Forbid();
+
+        if (ticket.IsHumanRequested) return BadRequest("Already escalated");
+
+        ticket.IsHumanRequested = true;
+        ticket.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var scopedContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+                var scopedAiService = scope.ServiceProvider.GetRequiredService<IAiSupportService>();
+                var scopedHubContext = scope.ServiceProvider.GetRequiredService<IHubContext<SupportChatHub>>();
+
+                var scopedTicket = await scopedContext.SupportTickets
+                    .Include(t => t.Messages)
+                    .FirstOrDefaultAsync(t => t.Id == id);
+
+                if (scopedTicket != null)
+                {
+                    var summary = await scopedAiService.SummarizeConversationAsync(scopedTicket);
+                    var summaryMessage = new TicketMessage
+                    {
+                        SupportTicketId = id,
+                        SenderEmail = "Exousia AI (Summary)",
+                        IsStaff = true,
+                        Message = "AI Summary of Chat:\n" + summary,
+                        IsInternalNote = true,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                            
+                    scopedContext.TicketMessages.Add(summaryMessage);
+                    await scopedContext.SaveChangesAsync();
+                    
+                    var msgData = new { summaryMessage.Id, summaryMessage.SenderEmail, summaryMessage.Message, summaryMessage.AttachmentUrl, summaryMessage.IsInternalNote, summaryMessage.IsStaff, summaryMessage.CreatedAt };
+                    await scopedHubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", msgData);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("AI Summary Error: " + ex.Message);
+            }
+        });
+
+        return Ok(new { Message = "Ticket escalated to human agents." });
+    }
+
+    [Authorize(Roles = "Admin,SupportAgent")]
+    [HttpGet("{id}/draft-reply")]
+    public async Task<IActionResult> DraftReply(int id)
+    {
+        var ticket = await _context.SupportTickets.Include(t => t.Messages).FirstOrDefaultAsync(t => t.Id == id);
+        if (ticket == null) return NotFound("Ticket not found");
+
+        var draft = await _aiService.DraftAgentReplyAsync(ticket);
+        return Ok(new { Draft = draft });
     }
 
     [Authorize(Roles = "Admin,SupportAgent")]
