@@ -23,7 +23,8 @@ namespace ECommerce.Api.Services
         {
             _httpClient = httpClient;
             _apiKey = config["OpenRouterSettings:ApiKey"] ?? "";
-            _model = config["OpenRouterSettings:Model"] ?? "google/gemma-4-26b-a4b-it:free";
+            var modelStr = config["OpenRouterSettings:Model"];
+            _model = string.IsNullOrEmpty(modelStr) ? "google/gemma-4-26b-a4b-it:free" : modelStr;
             
             _httpClient.BaseAddress = new Uri("https://openrouter.ai/api/v1/");
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
