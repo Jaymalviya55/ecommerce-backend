@@ -19,13 +19,15 @@ public class TicketsController : ControllerBase
     private readonly IHubContext<SupportChatHub> _hubContext;
     private readonly IAiSupportService _aiService;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AiTaskQueue _taskQueue;
 
-    public TicketsController(ECommerceDbContext context, IHubContext<SupportChatHub> hubContext, IAiSupportService aiService, IServiceScopeFactory scopeFactory)
+    public TicketsController(ECommerceDbContext context, IHubContext<SupportChatHub> hubContext, IAiSupportService aiService, IServiceScopeFactory scopeFactory, AiTaskQueue taskQueue)
     {
         _context = context;
         _hubContext = hubContext;
         _aiService = aiService;
         _scopeFactory = scopeFactory;
+        _taskQueue = taskQueue;
     }
 
     private TicketPriority DeterminePriority(string subject, string message)
@@ -284,8 +286,8 @@ public class TicketsController : ControllerBase
         // If customer replied and AI is active
         if (!isStaff && !ticket.IsHumanRequested)
         {
-            // Background process the AI response
-            _ = Task.Run(async () =>
+            // Background process the AI response safely using the queue
+            await _taskQueue.QueueBackgroundWorkItemAsync(async token =>
             {
                 try
                 {
@@ -296,7 +298,7 @@ public class TicketsController : ControllerBase
 
                     var scopedTicket = await scopedContext.SupportTickets
                         .Include(t => t.Messages)
-                        .FirstOrDefaultAsync(t => t.Id == id);
+                        .FirstOrDefaultAsync(t => t.Id == id, token);
 
                     if (scopedTicket != null)
                     {
@@ -313,11 +315,11 @@ public class TicketsController : ControllerBase
                         };
                         
                         scopedContext.TicketMessages.Add(aiMessage);
-                        await scopedContext.SaveChangesAsync();
+                        await scopedContext.SaveChangesAsync(token);
 
                         var aiResponseData = new { aiMessage.Id, aiMessage.SenderEmail, aiMessage.Message, aiMessage.AttachmentUrl, aiMessage.IsInternalNote, aiMessage.IsStaff, aiMessage.CreatedAt };
-                        await scopedHubContext.Clients.Group($"Ticket_{id}").SendAsync("ReceiveMessage", aiResponseData);
-                        await scopedHubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", aiResponseData);
+                        await scopedHubContext.Clients.Group($"Ticket_{id}").SendAsync("ReceiveMessage", aiResponseData, token);
+                        await scopedHubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", aiResponseData, token);
                     }
                 }
                 catch (Exception ex)
@@ -346,7 +348,7 @@ public class TicketsController : ControllerBase
         ticket.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        _ = Task.Run(async () =>
+        await _taskQueue.QueueBackgroundWorkItemAsync(async token =>
         {
             try
             {
@@ -357,7 +359,7 @@ public class TicketsController : ControllerBase
 
                 var scopedTicket = await scopedContext.SupportTickets
                     .Include(t => t.Messages)
-                    .FirstOrDefaultAsync(t => t.Id == id);
+                    .FirstOrDefaultAsync(t => t.Id == id, token);
 
                 if (scopedTicket != null)
                 {
@@ -373,10 +375,10 @@ public class TicketsController : ControllerBase
                     };
                             
                     scopedContext.TicketMessages.Add(summaryMessage);
-                    await scopedContext.SaveChangesAsync();
+                    await scopedContext.SaveChangesAsync(token);
                     
                     var msgData = new { summaryMessage.Id, summaryMessage.SenderEmail, summaryMessage.Message, summaryMessage.AttachmentUrl, summaryMessage.IsInternalNote, summaryMessage.IsStaff, summaryMessage.CreatedAt };
-                    await scopedHubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", msgData);
+                    await scopedHubContext.Clients.Group($"StaffTicket_{id}").SendAsync("ReceiveMessage", msgData, token);
                 }
             }
             catch (Exception ex)

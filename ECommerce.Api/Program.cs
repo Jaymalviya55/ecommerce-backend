@@ -7,6 +7,8 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Npgsql;
 using ECommerce.Api.Hubs;
+using Polly;
+using Polly.Extensions.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,7 +21,15 @@ builder.Services.AddControllers()
 builder.Services.AddOpenApi();
 builder.Services.AddSignalR();
 builder.Services.AddScoped<ECommerce.Api.Services.ITokenService, ECommerce.Api.Services.TokenService>();
-builder.Services.AddHttpClient<ECommerce.Api.Services.IAiSupportService, ECommerce.Api.Services.AiSupportService>();
+builder.Services.AddHttpClient<ECommerce.Api.Services.IAiSupportService, ECommerce.Api.Services.AiSupportService>()
+    .AddPolicyHandler(HttpPolicyExtensions
+        .HandleTransientHttpError()
+        .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))))
+    .AddPolicyHandler(HttpPolicyExtensions
+        .HandleTransientHttpError()
+        .CircuitBreakerAsync(5, TimeSpan.FromSeconds(30)));
+builder.Services.AddSingleton<ECommerce.Api.Services.AiTaskQueue>();
+builder.Services.AddHostedService<ECommerce.Api.Services.AiBackgroundService>();
 
 // Setup CORS
 builder.Services.AddCors(options =>
@@ -64,9 +74,12 @@ builder.Services.AddDbContext<ECommerceDbContext>(options =>
     options.UseNpgsql(connectionString);
 });
 
+builder.Services.AddHealthChecks()
+    .AddNpgSql(connectionString);
+
 // Setup Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options => 
-{
+{            
     options.Password.RequireDigit = true;
     options.Password.RequiredLength = 8;
     options.Lockout.MaxFailedAccessAttempts = 5;
@@ -115,6 +128,8 @@ builder.Services.AddAuthentication(options =>
 
 var app = builder.Build();
 
+app.UseMiddleware<ECommerce.Api.Middleware.GlobalExceptionMiddleware>();
+
 // Automatically apply pending database migrations and seed roles on startup
 using (var scope = app.Services.CreateScope())
 {
@@ -145,5 +160,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<SupportChatHub>("/hubs/chat");
+app.MapHealthChecks("/api/health");
 
 app.Run();
