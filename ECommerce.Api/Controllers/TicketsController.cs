@@ -28,6 +28,21 @@ public class TicketsController : ControllerBase
         _scopeFactory = scopeFactory;
     }
 
+    private TicketPriority DeterminePriority(string subject, string message)
+    {
+        var combinedText = (subject + " " + message).ToLowerInvariant();
+        
+        var urgentKeywords = new[] { "payment", "charge", "fraud", "unauthorized", "scam", "stolen", "hack" };
+        var highKeywords = new[] { "damage", "broken", "missing", "wrong", "defect", "shattered", "ruined" };
+        var mediumKeywords = new[] { "delay", "late", "where is", "tracking", "return", "refund" };
+
+        if (urgentKeywords.Any(k => combinedText.Contains(k))) return TicketPriority.Urgent;
+        if (highKeywords.Any(k => combinedText.Contains(k))) return TicketPriority.High;
+        if (mediumKeywords.Any(k => combinedText.Contains(k))) return TicketPriority.Medium;
+        
+        return TicketPriority.Low;
+    }
+
     [Authorize]
     [HttpPost]
     public async Task<IActionResult> CreateTicket([FromBody] CreateTicketRequest request)
@@ -39,7 +54,7 @@ public class TicketsController : ControllerBase
         {
             CustomerEmail = email,
             Subject = request.Subject,
-            Priority = request.Priority,
+            Priority = DeterminePriority(request.Subject, request.Message),
             OrderId = request.OrderId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
