@@ -19,13 +19,15 @@ public class AuthController : ControllerBase
     private readonly ECommerceDbContext _context;
     private readonly ITokenService _tokenService;
     private readonly IConfiguration _configuration;
+    private readonly IEmailService _emailService;
 
-    public AuthController(UserManager<ApplicationUser> userManager, ECommerceDbContext context, ITokenService tokenService, IConfiguration configuration)
+    public AuthController(UserManager<ApplicationUser> userManager, ECommerceDbContext context, ITokenService tokenService, IConfiguration configuration, IEmailService emailService)
     {
         _userManager = userManager;
         _context = context;
         _tokenService = tokenService;
         _configuration = configuration;
+        _emailService = emailService;
     }
 
     [HttpPost("register")]
@@ -52,12 +54,50 @@ public class AuthController : ControllerBase
         // Generate email confirmation token
         var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
         
-        // Simulate sending email (in production, use SendGrid or AWS SES)
-        Console.WriteLine($"\n--- EMAIL SIMULATION ---");
-        Console.WriteLine($"To: {user.Email}");
-        Console.WriteLine($"Subject: Verify your Enterprise Store account");
-        Console.WriteLine($"Link: http://localhost:5173/verify-email?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(user.Email)}");
-        Console.WriteLine($"------------------------\n");
+        var frontendUrl = _configuration["FrontendUrl"] ?? "http://localhost:5173";
+        var verifyUrl = $"{frontendUrl}/verify-email?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(user.Email)}";
+        
+        var emailBody = $@"
+        <html>
+        <head>
+            <style>
+                .button {{
+                    background-color: #4F46E5;
+                    border: none;
+                    color: white !important;
+                    padding: 15px 32px;
+                    text-align: center;
+                    text-decoration: none;
+                    display: inline-block;
+                    font-size: 16px;
+                    margin: 4px 2px;
+                    cursor: pointer;
+                    border-radius: 8px;
+                    font-family: Arial, sans-serif;
+                }}
+                .container {{
+                    font-family: Arial, sans-serif;
+                    padding: 20px;
+                    color: #333;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <h2>Welcome to Enterprise Store!</h2>
+                <p>Hi there,</p>
+                <p>Thank you for registering. Please click the button below to verify your email address and activate your account:</p>
+                <br/>
+                <a href='{verifyUrl}' class='button'>Verify Account</a>
+                <br/><br/>
+                <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
+                <p>{verifyUrl}</p>
+                <p>Thanks,<br/>The Enterprise Store Team</p>
+            </div>
+        </body>
+        </html>";
+
+        await _emailService.SendEmailAsync(user.Email, "Verify your Enterprise Store account", emailBody);
 
         return Ok(new { Message = "User registered successfully. Please check your email to verify your account." });
     }
@@ -171,21 +211,24 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("refresh")]
-    public async Task<IActionResult> RefreshToken([FromBody] TokenRequest request)
+    public async Task<IActionResult> RefreshToken()
     {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
+        var accessToken = Request.Cookies["AccessToken"];
+        var refreshToken = Request.Cookies["RefreshToken"];
+
+        if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(refreshToken))
+            return Unauthorized("Missing tokens.");
 
         try
         {
-            var principal = _tokenService.GetPrincipalFromExpiredToken(request.AccessToken);
+            var principal = _tokenService.GetPrincipalFromExpiredToken(accessToken);
             if (principal == null)
                 return Unauthorized("Invalid access token");
 
             var jwtId = principal.Claims.First(x => x.Type == JwtRegisteredClaimNames.Jti).Value;
 
             var storedRefreshToken = await _context.RefreshTokens
-                .FirstOrDefaultAsync(x => x.Token == request.RefreshToken);
+                .FirstOrDefaultAsync(x => x.Token == refreshToken);
 
             if (storedRefreshToken == null)
                 return Unauthorized("Refresh token does not exist");
@@ -227,11 +270,44 @@ public class AuthController : ControllerBase
         _context.RefreshTokens.Add(refreshToken);
         await _context.SaveChangesAsync();
 
-        return Ok(new AuthResponse
+        var cookieOptions = new CookieOptions
         {
-            AccessToken = jwtToken,
-            RefreshToken = refreshToken.Token
+            HttpOnly = true,
+            Secure = true, // Must be true for SameSite=None
+            SameSite = SameSiteMode.None, // Required for cross-origin local dev (5173 -> 5000)
+            Expires = DateTime.UtcNow.AddDays(7)
+        };
+
+        Response.Cookies.Append("AccessToken", jwtToken, cookieOptions);
+        Response.Cookies.Append("RefreshToken", refreshToken.Token, cookieOptions);
+
+        var roles = await _userManager.GetRolesAsync(user);
+
+        return Ok(new { 
+            Message = "Authentication successful",
+            User = new {
+                Id = user.Id,
+                Email = user.Email,
+                Roles = roles
+            }
         });
+    }
+
+    [HttpPost("logout")]
+    public IActionResult Logout()
+    {
+        var cookieOptions = new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.None,
+            Expires = DateTime.UtcNow.AddDays(-1)
+        };
+
+        Response.Cookies.Append("AccessToken", "", cookieOptions);
+        Response.Cookies.Append("RefreshToken", "", cookieOptions);
+
+        return Ok(new { Message = "Logged out successfully" });
     }
 
     [Authorize(Roles = "Admin")]

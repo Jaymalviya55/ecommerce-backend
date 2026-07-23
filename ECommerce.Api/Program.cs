@@ -31,6 +31,9 @@ builder.Services.AddHttpClient<ECommerce.Api.Services.IAiSupportService, ECommer
 builder.Services.AddSingleton<ECommerce.Api.Services.AiTaskQueue>();
 builder.Services.AddHostedService<ECommerce.Api.Services.AiBackgroundService>();
 
+builder.Services.Configure<ECommerce.Api.Models.EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
+builder.Services.AddTransient<ECommerce.Api.Services.IEmailService, ECommerce.Api.Services.EmailService>();
+
 // Setup CORS
 builder.Services.AddCors(options =>
 {
@@ -117,6 +120,13 @@ builder.Services.AddAuthentication(options =>
     {
         OnMessageReceived = context =>
         {
+            // Read from secure HttpOnly cookie
+            if (context.Request.Cookies.ContainsKey("AccessToken"))
+            {
+                context.Token = context.Request.Cookies["AccessToken"];
+            }
+
+            // Fallback for SignalR which uses query string
             var accessToken = context.Request.Query["access_token"];
             var path = context.HttpContext.Request.Path;
             if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
