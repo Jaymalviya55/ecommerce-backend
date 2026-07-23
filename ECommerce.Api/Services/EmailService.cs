@@ -1,7 +1,8 @@
-using System.Net;
-using System.Net.Mail;
 using Microsoft.Extensions.Options;
 using ECommerce.Api.Models;
+using MimeKit;
+using MailKit.Net.Smtp;
+using MailKit.Security;
 
 namespace ECommerce.Api.Services;
 
@@ -20,31 +21,30 @@ public class EmailService : IEmailService
     {
         try
         {
-            using var client = new SmtpClient(_emailSettings.SmtpServer, _emailSettings.SmtpPort)
-            {
-                Credentials = new NetworkCredential(_emailSettings.SenderEmail, _emailSettings.Password),
-                EnableSsl = true,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                UseDefaultCredentials = false
-            };
+            var email = new MimeMessage();
+            email.From.Add(new MailboxAddress(_emailSettings.SenderName, _emailSettings.SenderEmail));
+            email.To.Add(MailboxAddress.Parse(to));
+            email.Subject = subject;
 
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(_emailSettings.SenderEmail, _emailSettings.SenderName),
-                Subject = subject,
-                Body = htmlMessage,
-                IsBodyHtml = true
-            };
+            var builder = new BodyBuilder { HtmlBody = htmlMessage };
+            email.Body = builder.ToMessageBody();
+
+            using var smtp = new SmtpClient();
             
-            mailMessage.To.Add(to);
-
-            await client.SendMailAsync(mailMessage);
+            // SecureSocketOptions.Auto will automatically use Implicit SSL on port 465 
+            // and STARTTLS on port 587. It's smart enough to handle whatever we pass it!
+            await smtp.ConnectAsync(_emailSettings.SmtpServer, _emailSettings.SmtpPort, SecureSocketOptions.Auto);
+            
+            await smtp.AuthenticateAsync(_emailSettings.SenderEmail, _emailSettings.Password);
+            await smtp.SendAsync(email);
+            await smtp.DisconnectAsync(true);
+            
             _logger.LogInformation($"Email sent successfully to {to}");
         }
         catch (Exception ex)
         {
             _logger.LogError($"Failed to send email to {to}: {ex.Message}");
-            throw; // Re-throw so the caller knows it failed if necessary
+            throw; 
         }
     }
 }
