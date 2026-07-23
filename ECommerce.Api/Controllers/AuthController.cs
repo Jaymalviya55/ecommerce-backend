@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using System.IdentityModel.Tokens.Jwt;
+using Google.Apis.Auth;
 
 namespace ECommerce.Api.Controllers;
 
@@ -17,12 +18,14 @@ public class AuthController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ECommerceDbContext _context;
     private readonly ITokenService _tokenService;
+    private readonly IConfiguration _configuration;
 
-    public AuthController(UserManager<ApplicationUser> userManager, ECommerceDbContext context, ITokenService tokenService)
+    public AuthController(UserManager<ApplicationUser> userManager, ECommerceDbContext context, ITokenService tokenService, IConfiguration configuration)
     {
         _userManager = userManager;
         _context = context;
         _tokenService = tokenService;
+        _configuration = configuration;
     }
 
     [HttpPost("register")]
@@ -46,7 +49,32 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return BadRequest(result.Errors);
 
-        return Ok(new { Message = "User registered successfully." });
+        // Generate email confirmation token
+        var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
+        
+        // Simulate sending email (in production, use SendGrid or AWS SES)
+        Console.WriteLine($"\n--- EMAIL SIMULATION ---");
+        Console.WriteLine($"To: {user.Email}");
+        Console.WriteLine($"Subject: Verify your Enterprise Store account");
+        Console.WriteLine($"Link: http://localhost:5173/verify-email?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(user.Email)}");
+        Console.WriteLine($"------------------------\n");
+
+        return Ok(new { Message = "User registered successfully. Please check your email to verify your account." });
+    }
+
+    [HttpPost("verify-email")]
+    public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailRequest request)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null)
+            return BadRequest("Invalid email.");
+
+        var result = await _userManager.ConfirmEmailAsync(user, request.Token);
+        
+        if (result.Succeeded)
+            return Ok(new { Message = "Email verified successfully. You can now log in." });
+            
+        return BadRequest("Invalid or expired verification token.");
     }
 
     [HttpPost("login")]
@@ -60,18 +88,86 @@ public class AuthController : ControllerBase
         if (user == null)
             return Unauthorized("Invalid email or password.");
 
+        if (!await _userManager.IsEmailConfirmedAsync(user))
+            return Unauthorized("Please verify your email address before logging in.");
+
         if (await _userManager.IsLockedOutAsync(user))
             return Unauthorized("Account is locked due to too many failed attempts. Try again later.");
 
         var isPasswordValid = await _userManager.CheckPasswordAsync(user, request.Password);
         
         if (!isPasswordValid)
+        {
+            await _userManager.AccessFailedAsync(user);
             return Unauthorized("Invalid email or password.");
+        }
 
         // Successful login, reset lockout
         await _userManager.ResetAccessFailedCountAsync(user);
 
         return await GenerateTokenResponse(user);
+    }
+
+    [HttpPost("google-login")]
+    public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            var settings = new GoogleJsonWebSignature.ValidationSettings()
+            {
+                Audience = new List<string> { _configuration["Authentication:GoogleClientId"] ?? throw new InvalidOperationException("GoogleClientId is missing") } 
+            };
+
+            var payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, settings);
+            
+            var user = await _userManager.FindByEmailAsync(payload.Email);
+            
+            if (user == null)
+            {
+                // Register a new user automatically
+                user = new ApplicationUser
+                {
+                    UserName = payload.Email,
+                    Email = payload.Email,
+                    EmailConfirmed = true // Since Google already verified it
+                };
+                
+                var result = await _userManager.CreateAsync(user);
+                if (!result.Succeeded)
+                    return BadRequest(result.Errors);
+            }
+            else
+            {
+                // If the user already existed but their email wasn't confirmed,
+                // logging in with Google proves they own it. Confirm it now!
+                if (!user.EmailConfirmed)
+                {
+                    user.EmailConfirmed = true;
+                    await _userManager.UpdateAsync(user);
+                }
+            }
+
+            // Record that they logged in with Google (wakes up AspNetUserLogins table!)
+            var loginInfo = new UserLoginInfo("Google", payload.Subject, "Google");
+            var loginExists = await _userManager.FindByLoginAsync("Google", payload.Subject);
+            
+            if (loginExists == null)
+            {
+                await _userManager.AddLoginAsync(user, loginInfo);
+            }
+
+            // Successful login, reset lockout
+            await _userManager.ResetAccessFailedCountAsync(user);
+
+            return await GenerateTokenResponse(user);
+        }
+        catch (InvalidJwtException)
+        {
+            return Unauthorized("Invalid Google token.");
+        }
     }
 
     [HttpPost("refresh")]
@@ -131,9 +227,6 @@ public class AuthController : ControllerBase
         _context.RefreshTokens.Add(refreshToken);
         await _context.SaveChangesAsync();
 
-        // Note: To easily shift to HttpOnly approach later, we would simply do:
-        // Response.Cookies.Append("RefreshToken", refreshToken.Token, new CookieOptions { HttpOnly = true, Secure = true });
-        
         return Ok(new AuthResponse
         {
             AccessToken = jwtToken,
@@ -195,4 +288,10 @@ public class AssignRoleRequest
 {
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+}
+
+public class VerifyEmailRequest
+{
+    public string Email { get; set; } = string.Empty;
+    public string Token { get; set; } = string.Empty;
 }
