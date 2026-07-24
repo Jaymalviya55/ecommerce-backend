@@ -32,7 +32,14 @@ builder.Services.AddSingleton<ECommerce.Api.Services.AiTaskQueue>();
 builder.Services.AddHostedService<ECommerce.Api.Services.AiBackgroundService>();
 
 builder.Services.Configure<ECommerce.Api.Models.EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
-builder.Services.AddTransient<ECommerce.Api.Services.IEmailService, ECommerce.Api.Services.EmailService>();
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddTransient<ECommerce.Api.Services.IEmailService, ECommerce.Api.Services.SmtpEmailService>();
+}
+else
+{
+    builder.Services.AddHttpClient<ECommerce.Api.Services.IEmailService, ECommerce.Api.Services.ResendEmailService>();
+}
 
 // Setup CORS
 builder.Services.AddCors(options =>
