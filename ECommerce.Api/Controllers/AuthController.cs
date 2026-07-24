@@ -97,7 +97,15 @@ public class AuthController : ControllerBase
         </body>
         </html>";
 
-        await _emailService.SendEmailAsync(user.Email, "Verify your Enterprise Store account", emailBody);
+        try
+        {
+            await _emailService.SendEmailAsync(user.Email, "Verify your Enterprise Store account", emailBody);
+        }
+        catch (Exception ex)
+        {
+            // Log the error but don't fail the registration, especially useful in Resend Sandbox mode
+            Console.WriteLine($"Failed to send verification email: {ex.Message}");
+        }
 
         return Ok(new { Message = "User registered successfully. Please check your email to verify your account." });
     }
@@ -258,6 +266,99 @@ public class AuthController : ControllerBase
         }
     }
 
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null || !(await _userManager.IsEmailConfirmedAsync(user)))
+        {
+            // Don't reveal that the user does not exist or is not confirmed
+            return Ok(new { Message = "If an account exists for that email, a password reset link has been sent." });
+        }
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        
+        var frontendUrl = _configuration["FrontendUrl"] ?? "http://localhost:5173";
+        var resetUrl = $"{frontendUrl}/reset-password?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(user.Email)}";
+        
+        var emailBody = $@"
+        <html>
+        <head>
+            <style>
+                .button {{
+                    background-color: #4F46E5;
+                    border: none;
+                    color: white !important;
+                    padding: 15px 32px;
+                    text-align: center;
+                    text-decoration: none;
+                    display: inline-block;
+                    font-size: 16px;
+                    margin: 4px 2px;
+                    cursor: pointer;
+                    border-radius: 8px;
+                    font-family: Arial, sans-serif;
+                }}
+                .container {{
+                    font-family: Arial, sans-serif;
+                    padding: 20px;
+                    color: #333;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class='container'>
+                <h2>Reset Your Password</h2>
+                <p>Hi there,</p>
+                <p>You recently requested to reset your password for your Enterprise Store account. Click the button below to proceed:</p>
+                <br/>
+                <a href='{resetUrl}' class='button'>Reset Password</a>
+                <br/><br/>
+                <p>If you did not request a password reset, please ignore this email or reply to let us know. This password reset is only valid for the next 24 hours.</p>
+                <p>If the button doesn't work, you can copy and paste this link into your browser:</p>
+                <p>{resetUrl}</p>
+                <p>Thanks,<br/>The Enterprise Store Team</p>
+            </div>
+        </body>
+        </html>";
+
+        try
+        {
+            await _emailService.SendEmailAsync(user.Email, "Reset Password - Enterprise Store", emailBody);
+        }
+        catch (Exception ex)
+        {
+            // Log the error but still return the success message for security/sandbox mode
+            Console.WriteLine($"Failed to send password reset email: {ex.Message}");
+        }
+
+        return Ok(new { Message = "If an account exists for that email, a password reset link has been sent." });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var user = await _userManager.FindByEmailAsync(request.Email);
+        if (user == null)
+        {
+            // Don't reveal that the user does not exist
+            return Ok(new { Message = "Password has been reset successfully." });
+        }
+
+        var result = await _userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        
+        if (result.Succeeded)
+            return Ok(new { Message = "Password has been reset successfully." });
+
+        return BadRequest(result.Errors);
+    }
+
     private async Task<IActionResult> GenerateTokenResponse(ApplicationUser user)
     {
         var jwtToken = await _tokenService.GenerateAccessToken(user);
@@ -370,4 +471,16 @@ public class VerifyEmailRequest
 {
     public string Email { get; set; } = string.Empty;
     public string Token { get; set; } = string.Empty;
+}
+
+public class ForgotPasswordRequest
+{
+    public string Email { get; set; } = string.Empty;
+}
+
+public class ResetPasswordRequest
+{
+    public string Email { get; set; } = string.Empty;
+    public string Token { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
 }
