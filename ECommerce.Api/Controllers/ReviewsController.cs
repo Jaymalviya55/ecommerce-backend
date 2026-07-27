@@ -21,6 +21,7 @@ public class ReviewsController : ControllerBase
     }
 
     private string? CurrentUserId => User.FindFirst("uid")?.Value;
+    private string? CurrentUserEmail => User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
     [HttpGet]
     public async Task<IActionResult> GetReviews(int productId)
@@ -39,7 +40,8 @@ public class ReviewsController : ControllerBase
                 // Safely extract name from email for privacy
                 UserName = r.User != null && r.User.UserName != null 
                     ? r.User.UserName.Split('@', StringSplitOptions.None)[0] 
-                    : "Anonymous"
+                    : "Anonymous",
+                r.IsVerifiedPurchase
             })
             .ToListAsync();
 
@@ -58,6 +60,7 @@ public class ReviewsController : ControllerBase
     public async Task<IActionResult> AddReview(int productId, [FromBody] ReviewDto request)
     {
         var userId = CurrentUserId;
+        var email = CurrentUserEmail;
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
         var existingReview = await _context.Reviews
@@ -74,13 +77,21 @@ public class ReviewsController : ControllerBase
             return NotFound("Product not found.");
         }
 
+        // Check if user has purchased this product (checking both ID and Email due to JWT claims mapping)
+        var hasPurchased = await _context.OrderItems
+            .Include(oi => oi.Order)
+            .AnyAsync(oi => oi.ProductId == productId && oi.Order != null && 
+                            (oi.Order.UserId == userId || oi.Order.UserId == email || oi.Order.CustomerEmail == email) && 
+                            oi.Order.Status != OrderStatus.Cancelled);
+
         var review = new Review
         {
             ProductId = productId,
             UserId = userId,
             Rating = request.Rating,
             Comment = request.Comment,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            IsVerifiedPurchase = hasPurchased
         };
 
         _context.Reviews.Add(review);
@@ -106,9 +117,18 @@ public class ReviewsController : ControllerBase
             return Forbid();
         }
 
+        // Re-check verification in case they bought it after their initial review
+        var email = CurrentUserEmail;
+        var hasPurchased = await _context.OrderItems
+            .Include(oi => oi.Order)
+            .AnyAsync(oi => oi.ProductId == productId && oi.Order != null && 
+                            (oi.Order.UserId == userId || oi.Order.UserId == email || oi.Order.CustomerEmail == email) && 
+                            oi.Order.Status != OrderStatus.Cancelled);
+
         review.Rating = request.Rating;
         review.Comment = request.Comment;
         review.UpdatedAt = DateTime.UtcNow;
+        review.IsVerifiedPurchase = hasPurchased;
 
         await _context.SaveChangesAsync();
 
