@@ -26,6 +26,18 @@ public class ReviewsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetReviews(int productId)
     {
+        var userId = CurrentUserId;
+        var email = CurrentUserEmail;
+        bool hasPurchased = false;
+
+        if (!string.IsNullOrEmpty(userId) || !string.IsNullOrEmpty(email))
+        {
+            hasPurchased = await _context.OrderItems
+                .Include(oi => oi.Order)
+                .AnyAsync(oi => oi.ProductId == productId && oi.Order != null && 
+                                (oi.Order.UserId == userId || oi.Order.UserId == email || oi.Order.CustomerEmail == email) && 
+                                oi.Order.Status != OrderStatus.Cancelled);
+        }
         var reviews = await _context.Reviews
             .Include(r => r.User)
             .Where(r => r.ProductId == productId)
@@ -51,6 +63,7 @@ public class ReviewsController : ControllerBase
         return Ok(new {
             AverageRating = averageRating,
             TotalReviews = totalReviews,
+            HasPurchased = hasPurchased,
             Reviews = reviews
         });
     }
@@ -83,6 +96,11 @@ public class ReviewsController : ControllerBase
             .AnyAsync(oi => oi.ProductId == productId && oi.Order != null && 
                             (oi.Order.UserId == userId || oi.Order.UserId == email || oi.Order.CustomerEmail == email) && 
                             oi.Order.Status != OrderStatus.Cancelled);
+
+        if (!hasPurchased)
+        {
+            return BadRequest("You can only review products that you have purchased.");
+        }
 
         var review = new Review
         {
@@ -124,6 +142,11 @@ public class ReviewsController : ControllerBase
             .AnyAsync(oi => oi.ProductId == productId && oi.Order != null && 
                             (oi.Order.UserId == userId || oi.Order.UserId == email || oi.Order.CustomerEmail == email) && 
                             oi.Order.Status != OrderStatus.Cancelled);
+
+        if (!hasPurchased)
+        {
+            return BadRequest("You can only review products that you have purchased.");
+        }
 
         review.Rating = request.Rating;
         review.Comment = request.Comment;
