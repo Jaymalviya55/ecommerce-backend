@@ -10,5 +10,7 @@ public class Cart
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    public string? AppliedCouponCode { get; set; }
+
     public ICollection<CartItem> Items { get; set; } = new List<CartItem>();
 }

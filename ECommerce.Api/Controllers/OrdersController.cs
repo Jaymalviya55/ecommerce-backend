@@ -61,9 +61,27 @@ public class OrdersController : ControllerBase
 
             order.TotalAmount += (orderItem.Quantity * orderItem.UnitPrice);
             order.Items.Add(orderItem);
-            
-            // Optionally, we could deduct StockQuantity here.
-            // product.StockQuantity -= orderItem.Quantity;
+        }
+
+        // 3.5 Apply Coupon if one is attached to the Cart
+        if (!string.IsNullOrEmpty(cart.AppliedCouponCode))
+        {
+            var coupon = await _context.Coupons.FirstOrDefaultAsync(c => c.Code == cart.AppliedCouponCode);
+            if (coupon != null && coupon.IsActive && coupon.ExpirationDate >= DateTime.UtcNow && order.TotalAmount >= coupon.MinimumSpend)
+            {
+                // Verify user hasn't used it already
+                var alreadyUsed = await _context.Orders
+                    .AnyAsync(o => (o.UserId == userId || o.CustomerEmail == request.Email) 
+                                   && o.AppliedCouponCode == coupon.Code 
+                                   && o.Status != OrderStatus.Cancelled);
+                                   
+                if (!alreadyUsed)
+                {
+                    order.AppliedCouponCode = coupon.Code;
+                    order.DiscountAmount = Math.Round(order.TotalAmount * (coupon.DiscountPercentage / 100m), 2);
+                    order.TotalAmount -= order.DiscountAmount;
+                }
+            }
         }
 
         // 4. Create Order on Razorpay Servers
