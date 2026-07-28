@@ -123,6 +123,74 @@ public class CartsController : ControllerBase
 
         return NoContent();
     }
+
+    [HttpPost("{sessionId}/coupon")]
+    public async Task<IActionResult> ApplyCoupon(string sessionId, [FromBody] ApplyCouponRequest request)
+    {
+        var cart = await _context.Carts
+            .Include(c => c.Items)
+            .ThenInclude(i => i.Product)
+            .FirstOrDefaultAsync(c => c.SessionId == sessionId);
+
+        if (cart == null || !cart.Items.Any())
+        {
+            return BadRequest("Cart is empty or not found.");
+        }
+
+        // Validate Coupon
+        var coupon = await _context.Coupons.FirstOrDefaultAsync(c => c.Code.ToUpper() == request.Code.ToUpper());
+        if (coupon == null || !coupon.IsActive || coupon.ExpirationDate < DateTime.UtcNow)
+        {
+            return BadRequest("Invalid or expired coupon code.");
+        }
+
+        var subtotal = cart.Items.Sum(i => i.Quantity * i.UnitPrice);
+        if (subtotal < coupon.MinimumSpend)
+        {
+            return BadRequest($"This coupon requires a minimum spend of ₹{coupon.MinimumSpend}.");
+        }
+        
+        // Ensure user hasn't used this coupon already (One-time use per user rule)
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+
+        if (!string.IsNullOrEmpty(userId) || !string.IsNullOrEmpty(email))
+        {
+            var alreadyUsed = await _context.Orders
+                .AnyAsync(o => (o.UserId == userId || o.CustomerEmail == email) 
+                               && o.AppliedCouponCode == coupon.Code 
+                               && o.Status != OrderStatus.Cancelled);
+                               
+            if (alreadyUsed)
+            {
+                return BadRequest("You have already used this coupon code.");
+            }
+        }
+
+        cart.AppliedCouponCode = coupon.Code;
+        cart.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = "Coupon applied successfully.", CouponCode = coupon.Code, DiscountPercentage = coupon.DiscountPercentage });
+    }
+
+    [HttpDelete("{sessionId}/coupon")]
+    public async Task<IActionResult> RemoveCoupon(string sessionId)
+    {
+        var cart = await _context.Carts.FirstOrDefaultAsync(c => c.SessionId == sessionId);
+        if (cart == null) return NotFound();
+
+        cart.AppliedCouponCode = null;
+        cart.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { Message = "Coupon removed." });
+    }
+}
+
+public class ApplyCouponRequest
+{
+    public string Code { get; set; } = string.Empty;
 }
 
 public class AddToCartRequest

@@ -37,5 +37,8 @@ public class Order
     public string? TrackingNumber { get; set; }
     public string? CarrierName { get; set; }
 
+    public string? AppliedCouponCode { get; set; }
+    public decimal DiscountAmount { get; set; }
+
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
 }
