@@ -19,6 +19,7 @@ public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<SupportTicket> SupportTickets { get; set; } = null!;
     public DbSet<TicketMessage> TicketMessages { get; set; } = null!;
     public DbSet<Coupon> Coupons { get; set; } = null!;
+    public DbSet<Address> Addresses { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,6 +34,13 @@ public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<Review>()
             .HasIndex(r => new { r.ProductId, r.UserId })
             .IsUnique();
+
+        // Address to User relationship
+        modelBuilder.Entity<Address>()
+            .HasOne(a => a.User)
+            .WithMany(u => u.Addresses)
+            .HasForeignKey(a => a.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Fix Decimal warnings
         modelBuilder.Entity<Product>()
