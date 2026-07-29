@@ -23,6 +23,36 @@ public class ReviewsController : ControllerBase
     private string? CurrentUserId => User.FindFirst("uid")?.Value;
     private string? CurrentUserEmail => User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
+    [Authorize]
+    [HttpGet("/api/reviews/me")]
+    public async Task<IActionResult> GetMyReviews()
+    {
+        var userId = CurrentUserId;
+        var email = CurrentUserEmail;
+
+        if (string.IsNullOrEmpty(userId) && string.IsNullOrEmpty(email))
+        {
+            return Unauthorized();
+        }
+
+        var reviews = await _context.Reviews
+            .Include(r => r.Product)
+            .Where(r => r.UserId == userId || r.UserId == email)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new {
+                r.Id,
+                r.Rating,
+                r.Comment,
+                r.CreatedAt,
+                ProductId = r.ProductId,
+                ProductName = r.Product != null ? r.Product.Name : "Unknown",
+                ProductImageUrl = r.Product != null ? r.Product.ImageUrl : null
+            })
+            .ToListAsync();
+
+        return Ok(reviews);
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetReviews(int productId)
     {
