@@ -56,7 +56,8 @@ public class OrdersController : ControllerBase
             {
                 ProductId = cartItem.ProductId,
                 Quantity = cartItem.Quantity,
-                UnitPrice = product.Price // ALWAYS trust backend price, never frontend price!
+                UnitPrice = product.Price, // ALWAYS trust backend price, never frontend price!
+                ImageUrl = product.ImageUrl
             };
 
             order.TotalAmount += (orderItem.Quantity * orderItem.UnitPrice);
@@ -141,7 +142,8 @@ public class OrdersController : ControllerBase
                     i.ProductId,
                     ProductName = i.Product != null ? i.Product.Name : "Unknown Product",
                     i.Quantity,
-                    i.UnitPrice
+                    i.UnitPrice,
+                    i.ImageUrl
                 })
             })
             .ToListAsync();
@@ -168,12 +170,30 @@ public class OrdersController : ControllerBase
                 Items = o.Items.Select(i => new {
                     i.ProductId,
                     ProductName = i.Product != null ? i.Product.Name : "Unknown Product",
-                    i.Quantity
+                    i.Quantity,
+                    i.ImageUrl
                 })
             })
             .ToListAsync();
 
         return Ok(orders);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPut("{id}/status")]
+    public async Task<IActionResult> UpdateOrderStatus(int id, [FromBody] UpdateOrderStatusRequest request)
+    {
+        var order = await _context.Orders.FindAsync(id);
+        if (order == null) return NotFound("Order not found.");
+
+        if (!Enum.TryParse<OrderStatus>(request.Status, out var newStatus))
+        {
+            return BadRequest("Invalid order status.");
+        }
+
+        order.Status = newStatus;
+        await _context.SaveChangesAsync();
+        return Ok(new { Message = "Order status updated.", Status = newStatus.ToString() });
     }
 
     [Authorize(Roles = "Admin,FulfillmentStaff")]
@@ -301,7 +321,8 @@ public class OrdersController : ControllerBase
                     i.ProductId,
                     ProductName = i.Product != null ? i.Product.Name : "Unknown Product",
                     i.Quantity,
-                    i.UnitPrice
+                    i.UnitPrice,
+                    i.ImageUrl
                 })
             })
             .ToListAsync();
@@ -321,4 +342,9 @@ public class ShipOrderRequest
 {
     public string? TrackingNumber { get; set; }
     public string? CarrierName { get; set; }
+}
+
+public class UpdateOrderStatusRequest
+{
+    public string Status { get; set; } = string.Empty;
 }
