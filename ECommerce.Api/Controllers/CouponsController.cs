@@ -25,6 +25,17 @@ public class CouponsController : ControllerBase
         return Ok(coupons);
     }
 
+    [Authorize]
+    [HttpGet("active")]
+    public async Task<IActionResult> GetActiveCoupons()
+    {
+        var coupons = await _context.Coupons
+            .Where(c => c.IsActive && c.ExpirationDate > DateTime.UtcNow)
+            .OrderByDescending(c => c.CreatedAt)
+            .ToListAsync();
+        return Ok(coupons);
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<IActionResult> CreateCoupon([FromBody] CreateCouponDto request)
