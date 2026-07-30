@@ -68,7 +68,12 @@ public class OrdersController : ControllerBase
         if (!string.IsNullOrEmpty(cart.AppliedCouponCode))
         {
             var coupon = await _context.Coupons.FirstOrDefaultAsync(c => c.Code == cart.AppliedCouponCode);
-            if (coupon != null && coupon.IsActive && coupon.ExpirationDate >= DateTime.UtcNow && order.TotalAmount >= coupon.MinimumSpend)
+            var userEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var isCouponValidForUser = coupon?.AssignedToUserId == null && coupon?.AssignedToEmail == null ||
+                                       coupon?.AssignedToUserId == userId ||
+                                       coupon?.AssignedToEmail == userEmail;
+
+            if (coupon != null && coupon.IsActive && coupon.ExpirationDate >= DateTime.UtcNow && order.TotalAmount >= coupon.MinimumSpend && isCouponValidForUser)
             {
                 // Verify user hasn't used it already
                 var alreadyUsed = await _context.Orders

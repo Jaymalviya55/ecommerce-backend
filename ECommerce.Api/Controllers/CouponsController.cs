@@ -29,8 +29,14 @@ public class CouponsController : ControllerBase
     [HttpGet("active")]
     public async Task<IActionResult> GetActiveCoupons()
     {
+        var userId = User.FindFirst("uid")?.Value;
+        var userEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
         var coupons = await _context.Coupons
-            .Where(c => c.IsActive && c.ExpirationDate > DateTime.UtcNow)
+            .Where(c => c.IsActive && c.ExpirationDate > DateTime.UtcNow &&
+                        (c.AssignedToUserId == null && c.AssignedToEmail == null ||
+                         c.AssignedToUserId == userId || 
+                         c.AssignedToEmail == userEmail))
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync();
         return Ok(coupons);
@@ -53,10 +59,25 @@ public class CouponsController : ControllerBase
             IsActive = request.IsActive,
             ExpirationDate = request.ExpirationDate,
             MinimumSpend = request.MinimumSpend,
+            AssignedToEmail = string.IsNullOrWhiteSpace(request.AssignedToEmail) ? null : request.AssignedToEmail.Trim(),
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Coupons.Add(coupon);
+        await _context.SaveChangesAsync();
+
+        return Ok(coupon);
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPut("{id}/status")]
+    public async Task<IActionResult> UpdateCouponStatus(int id, [FromBody] bool isActive)
+    {
+        var coupon = await _context.Coupons.FindAsync(id);
+        if (coupon == null)
+            return NotFound("Coupon not found.");
+
+        coupon.IsActive = isActive;
         await _context.SaveChangesAsync();
 
         return Ok(coupon);
@@ -70,4 +91,5 @@ public class CreateCouponDto
     public bool IsActive { get; set; } = true;
     public DateTime ExpirationDate { get; set; }
     public decimal MinimumSpend { get; set; }
+    public string? AssignedToEmail { get; set; }
 }

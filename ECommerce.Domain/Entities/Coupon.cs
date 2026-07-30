@@ -9,4 +9,8 @@ public class Coupon
     public DateTime ExpirationDate { get; set; }
     public decimal MinimumSpend { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    
+    // Optional assignment for targeted coupons
+    public string? AssignedToUserId { get; set; }
+    public string? AssignedToEmail { get; set; }
 }
