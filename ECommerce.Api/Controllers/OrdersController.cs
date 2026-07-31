@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using Razorpay.Api;
+using ECommerce.Api.MetadataHolder;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -127,7 +128,8 @@ public class OrdersController : ControllerBase
         });
     }
 
-    [Authorize(Roles = "Admin,SupportAgent")]
+    [Authorize]
+    [FeatureAuthorization("@admin/orders", "read")]
     [HttpGet("all")]
     public async Task<IActionResult> GetAllOrders()
     {

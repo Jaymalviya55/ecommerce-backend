@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using System.IdentityModel.Tokens.Jwt;
 using Google.Apis.Auth;
+using Casbin;
+using ECommerce.Domain.Entities.UserManagement;
 
 namespace ECommerce.Api.Controllers;
 
@@ -50,6 +52,24 @@ public class AuthController : ControllerBase
 
         if (!result.Succeeded)
             return BadRequest(result.Errors);
+
+        // Connect user to the 4-Tier User Management System (AppUserLogins)
+        var userLogin = new UserLogin
+        {
+            UserName = user.Email,
+            PasswordHash = user.PasswordHash ?? "",
+            UserTypeId = 4, // Customer
+            UserLevelId = 4, // StandardCustomer
+            UserReferenceId = user.Id,
+            TenantId = "global",
+            IsActive = true,
+            IsDefaultPasswordChange = false,
+            LoginAttemptsCount = 0,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.AppUserLogins.Add(userLogin);
+        await _context.SaveChangesAsync();
 
         // Generate email confirmation token
         var token = await _userManager.GenerateEmailConfirmationTokenAsync(user);
@@ -131,7 +151,25 @@ public class AuthController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var user = await _userManager.FindByEmailAsync(request.Email);
+        // 1. Query the 4-Tier UserManagement AppUserLogins table
+        var userLogin = await _context.AppUserLogins
+            .Include(u => u.UserType)
+            .Include(u => u.UserLevel)
+            .FirstOrDefaultAsync(u => u.UserName == request.Email || u.UserName == request.Email.Trim());
+
+        ApplicationUser? user = null;
+        if (userLogin != null)
+        {
+            if (!userLogin.IsActive)
+                return Unauthorized("Your account has been deactivated by an Administrator.");
+
+            user = await _userManager.FindByIdAsync(userLogin.UserReferenceId);
+        }
+        
+        if (user == null)
+        {
+            user = await _userManager.FindByEmailAsync(request.Email);
+        }
         
         if (user == null)
             return Unauthorized("Invalid email or password.");
@@ -146,11 +184,25 @@ public class AuthController : ControllerBase
         
         if (!isPasswordValid)
         {
+            if (userLogin != null)
+            {
+                userLogin.LoginAttemptsCount++;
+                _context.AppUserLogins.Update(userLogin);
+                await _context.SaveChangesAsync();
+            }
+
             await _userManager.AccessFailedAsync(user);
             return Unauthorized("Invalid email or password.");
         }
 
-        // Successful login, reset lockout
+        // Successful login: Update login attempts and reset lockout
+        if (userLogin != null)
+        {
+            userLogin.LoginAttemptsCount = 0;
+            _context.AppUserLogins.Update(userLogin);
+            await _context.SaveChangesAsync();
+        }
+
         await _userManager.ResetAccessFailedCountAsync(user);
 
         return await GenerateTokenResponse(user);
@@ -457,6 +509,52 @@ public class AuthController : ControllerBase
             Email = adminEmail, 
             RolesInDb = roles, 
             UserObj = new { adminUser.Id, adminUser.UserName }
+        });
+    }
+
+    [Authorize]
+    [HttpGet("user-info")]
+    public async Task<IActionResult> GetUserInfo([FromServices] Casbin.IEnforcer enforcer)
+    {
+        var userId = User.FindFirst("uid")?.Value;
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.Identity?.Name;
+        var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(r => r.Value).ToList();
+
+        string userLevelId = roles.Contains("Admin") ? "1" : (roles.Contains("SupportAgent") ? "3" : "4");
+        string tenantId = "global";
+
+        var groupingPolicies = enforcer.GetGroupingPolicy()
+            .Select(g => g.ToList())
+            .Where(g => g.Count >= 3 && g.ElementAtOrDefault(0) == userLevelId && g.ElementAtOrDefault(2) == tenantId)
+            .Select(g => g.ElementAtOrDefault(1))
+            .Where(r => !string.IsNullOrEmpty(r))
+            .Distinct()
+            .ToList();
+
+        var allPolicies = enforcer.GetPolicy()
+            .Select(p => p.ToList())
+            .Where(p => p.Count >= 4 && groupingPolicies.Contains(p.ElementAtOrDefault(0)!) && p.ElementAtOrDefault(1) == tenantId)
+            .Select(p => new { Role = p.ElementAtOrDefault(0)!, Feature = p.ElementAtOrDefault(2)!, Action = p.ElementAtOrDefault(3)! })
+            .ToList();
+
+        var permissions = allPolicies
+            .GroupBy(p => p.Feature)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.Action).Distinct().ToArray()
+            );
+
+        var user = !string.IsNullOrEmpty(email) ? await _userManager.FindByEmailAsync(email) : null;
+
+        return Ok(new
+        {
+            UserId = userId,
+            Email = email,
+            FullName = user != null ? $"{user.FirstName} {user.LastName}".Trim() : email,
+            Roles = roles,
+            UserLevelId = userLevelId,
+            TenantId = tenantId,
+            Permissions = permissions
         });
     }
 }

@@ -1,6 +1,7 @@
 namespace ECommerce.Infrastructure.Data;
 
 using ECommerce.Domain.Entities;
+using ECommerce.Domain.Entities.UserManagement;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 
@@ -20,6 +21,18 @@ public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<TicketMessage> TicketMessages { get; set; } = null!;
     public DbSet<Coupon> Coupons { get; set; } = null!;
     public DbSet<Address> Addresses { get; set; } = null!;
+
+    // User Management Domain DbSets
+    public DbSet<UserType> UserTypes { get; set; } = null!;
+    public DbSet<UserLevel> UserLevels { get; set; } = null!;
+    public DbSet<UserRole> AppUserRoles { get; set; } = null!;
+    public DbSet<UserLogin> AppUserLogins { get; set; } = null!;
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        base.OnConfiguring(optionsBuilder);
+        optionsBuilder.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +55,13 @@ public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(a => a.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // User Management Configurations
+        modelBuilder.Entity<UserType>().HasKey(ut => ut.UserTypeId);
+        modelBuilder.Entity<UserLevel>().HasKey(ul => ul.UserLevelId);
+        modelBuilder.Entity<UserRole>().ToTable("UserRoles").HasKey(ur => ur.UserRoleId);
+        modelBuilder.Entity<UserLogin>().ToTable("UserLogins").HasKey(ul => ul.UserId);
+        modelBuilder.Entity<UserLogin>().HasIndex(ul => ul.UserName).IsUnique();
+
         // Fix Decimal warnings
         modelBuilder.Entity<Product>()
             .Property(p => p.Price)
@@ -58,40 +78,5 @@ public class ECommerceDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<OrderItem>()
             .Property(oi => oi.UnitPrice)
             .HasPrecision(18, 2);
-
-        modelBuilder.Entity<Order>()
-            .Property(o => o.DiscountAmount)
-            .HasPrecision(18, 2);
-
-        modelBuilder.Entity<Coupon>()
-            .Property(c => c.DiscountPercentage)
-            .HasPrecision(5, 2);
-
-        modelBuilder.Entity<Coupon>()
-            .Property(c => c.MinimumSpend)
-            .HasPrecision(18, 2);
-
-        // Seed data for Module 2 testing
-        modelBuilder.Entity<Category>().HasData(
-            new Category { Id = 1, Name = "Electronics" },
-            new Category { Id = 2, Name = "Accessories" }
-        );
-
-        modelBuilder.Entity<Product>().HasData(
-            new Product { Id = 1, Name = "Gaming Laptop", Description = "High performance laptop", Price = 1200.00m, StockQuantity = 10, CategoryId = 1 },
-            new Product { Id = 2, Name = "Wireless Mouse", Description = "Ergonomic mouse", Price = 25.50m, StockQuantity = 50, CategoryId = 2 }
-        );
-
-        modelBuilder.Entity<Coupon>().HasData(
-            new Coupon { 
-                Id = 1, 
-                Code = "SUMMER20", 
-                DiscountPercentage = 20.00m, 
-                IsActive = true, 
-                ExpirationDate = new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc), 
-                MinimumSpend = 1000.00m, 
-                CreatedAt = new DateTime(2026, 7, 28, 0, 0, 0, DateTimeKind.Utc) 
-            }
-        );
     }
 }
