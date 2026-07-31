@@ -22,14 +22,16 @@ public class AuthController : ControllerBase
     private readonly ITokenService _tokenService;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(UserManager<ApplicationUser> userManager, ECommerceDbContext context, ITokenService tokenService, IConfiguration configuration, IEmailService emailService)
+    public AuthController(UserManager<ApplicationUser> userManager, ECommerceDbContext context, ITokenService tokenService, IConfiguration configuration, IEmailService emailService, ILogger<AuthController> logger)
     {
         _userManager = userManager;
         _context = context;
         _tokenService = tokenService;
         _configuration = configuration;
         _emailService = emailService;
+        _logger = logger;
     }
 
     [HttpPost("register")]
@@ -53,13 +55,24 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return BadRequest(result.Errors);
 
+        int userTypeId = request.UserTypeId ?? 4;
+        int userLevelId = request.UserLevelId ?? 4;
+
+        // Assign Identity Role based on UserLevelId / UserTypeId
+        string assignedRole = "Customer";
+        if (userLevelId == 1 || userTypeId == 1) assignedRole = "Admin";
+        else if (userLevelId == 2 || userTypeId == 2) assignedRole = "FulfillmentStaff";
+        else if (userLevelId == 3 || userTypeId == 3) assignedRole = "SupportAgent";
+
+        await _userManager.AddToRoleAsync(user, assignedRole);
+
         // Connect user to the 4-Tier User Management System (AppUserLogins)
         var userLogin = new UserLogin
         {
             UserName = user.Email,
             PasswordHash = user.PasswordHash ?? "",
-            UserTypeId = 4, // Customer
-            UserLevelId = 4, // StandardCustomer
+            UserTypeId = userTypeId,
+            UserLevelId = userLevelId,
             UserReferenceId = user.Id,
             TenantId = "global",
             IsActive = true,
@@ -117,17 +130,25 @@ public class AuthController : ControllerBase
         </body>
         </html>";
 
+        _logger.LogInformation($"[DEV EMAIL VERIFICATION LINK]: {verifyUrl}");
+        Console.WriteLine($"\n=======================================================\n[DEV VERIFICATION LINK FOR {user.Email}]:\n{verifyUrl}\n=======================================================\n");
+
         try
         {
             await _emailService.SendEmailAsync(user.Email, "Verify your Enterprise Store account", emailBody);
         }
         catch (Exception ex)
         {
-            // Log the error but don't fail the registration, especially useful in Resend Sandbox mode
-            Console.WriteLine($"Failed to send verification email: {ex.Message}");
+            _logger.LogError(ex, $"Failed to send verification email to {user.Email}: {ex.Message}");
         }
 
-        return Ok(new { Message = "User registered successfully. Please check your email to verify your account." });
+        return Ok(new 
+        { 
+            Message = "User registered successfully. Please check your email to verify your account.",
+            UserTypeId = userTypeId,
+            UserLevelId = userLevelId,
+            AssignedRole = assignedRole
+        });
     }
 
     [HttpPost("verify-email")]
