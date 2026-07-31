@@ -5,6 +5,7 @@ using ECommerce.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using ECommerce.Api.MetadataHolder;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -17,7 +18,8 @@ public class CouponsController : ControllerBase
         _context = context;
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize]
+    [FeatureAuthorization("@admin/coupons", "read")]
     [HttpGet]
     public async Task<IActionResult> GetCoupons()
     {
@@ -42,7 +44,8 @@ public class CouponsController : ControllerBase
         return Ok(coupons);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize]
+    [FeatureAuthorization("@admin/coupons", "write")]
     [HttpPost]
     public async Task<IActionResult> CreateCoupon([FromBody] CreateCouponDto request)
     {

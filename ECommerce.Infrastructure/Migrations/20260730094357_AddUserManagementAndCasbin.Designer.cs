@@ -3,6 +3,7 @@ using System;
 using ECommerce.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ECommerce.Infrastructure.Migrations
 {
     [DbContext(typeof(ECommerceDbContext))]
-    partial class ECommerceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260730094357_AddUserManagementAndCasbin")]
+    partial class AddUserManagementAndCasbin
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -228,6 +231,18 @@ namespace ECommerce.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Categories");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Name = "Electronics"
+                        },
+                        new
+                        {
+                            Id = 2,
+                            Name = "Accessories"
+                        });
                 });
 
             modelBuilder.Entity("ECommerce.Domain.Entities.Coupon", b =>
@@ -252,7 +267,8 @@ namespace ECommerce.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<decimal>("DiscountPercentage")
-                        .HasColumnType("numeric");
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
 
                     b.Property<DateTime>("ExpirationDate")
                         .HasColumnType("timestamp with time zone");
@@ -261,11 +277,24 @@ namespace ECommerce.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<decimal>("MinimumSpend")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
                     b.HasKey("Id");
 
                     b.ToTable("Coupons");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            Code = "SUMMER20",
+                            CreatedAt = new DateTime(2026, 7, 28, 0, 0, 0, 0, DateTimeKind.Utc),
+                            DiscountPercentage = 20.00m,
+                            ExpirationDate = new DateTime(2027, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MinimumSpend = 1000.00m
+                        });
                 });
 
             modelBuilder.Entity("ECommerce.Domain.Entities.Order", b =>
@@ -287,7 +316,8 @@ namespace ECommerce.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.Property<decimal>("DiscountAmount")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime>("OrderDate")
                         .HasColumnType("timestamp with time zone");
@@ -391,6 +421,26 @@ namespace ECommerce.Infrastructure.Migrations
                     b.HasIndex("CategoryId");
 
                     b.ToTable("Products");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CategoryId = 1,
+                            Description = "High performance laptop",
+                            Name = "Gaming Laptop",
+                            Price = 1200.00m,
+                            StockQuantity = 10
+                        },
+                        new
+                        {
+                            Id = 2,
+                            CategoryId = 2,
+                            Description = "Ergonomic mouse",
+                            Name = "Wireless Mouse",
+                            Price = 25.50m,
+                            StockQuantity = 50
+                        });
                 });
 
             modelBuilder.Entity("ECommerce.Domain.Entities.RefreshToken", b =>
@@ -635,7 +685,7 @@ namespace ECommerce.Infrastructure.Migrations
 
                     b.HasIndex("UserTypeId");
 
-                    b.ToTable("UserLogins", (string)null);
+                    b.ToTable("UserLogins");
                 });
 
             modelBuilder.Entity("ECommerce.Domain.Entities.UserManagement.UserRole", b =>
@@ -669,7 +719,7 @@ namespace ECommerce.Infrastructure.Migrations
 
                     b.HasIndex("UserLevelId");
 
-                    b.ToTable("UserRoles", (string)null);
+                    b.ToTable("UserRoles");
                 });
 
             modelBuilder.Entity("ECommerce.Domain.Entities.UserManagement.UserType", b =>

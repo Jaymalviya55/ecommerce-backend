@@ -5,6 +5,7 @@ using ECommerce.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using ECommerce.Api.MetadataHolder;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -21,7 +22,8 @@ public class AnalyticsController : ControllerBase
         _context = context;
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize]
+    [FeatureAuthorization("@admin/analytics", "read")]
     [HttpGet("dashboard")]
     public async Task<IActionResult> GetDashboardAnalytics([FromQuery] int days = 30)
     {
