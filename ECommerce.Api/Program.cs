@@ -164,6 +164,7 @@ using (var scope = app.Services.CreateScope())
     var casbinDbContext = scope.ServiceProvider.GetRequiredService<Casbin.Persist.Adapter.EFCore.CasbinDbContext<int>>();
     casbinDbContext.Database.EnsureCreated();
 
+    // Standard ASP.NET Identity Roles
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
@@ -174,139 +175,6 @@ using (var scope = app.Services.CreateScope())
         {
             await roleManager.CreateAsync(new IdentityRole(role));
         }
-    }
-
-    // Seed User Management Domain Tables
-    if (!await dbContext.UserTypes.AnyAsync())
-    {
-        var adminType = new UserType { UserTypeId = 1, Name = "Admin", Code = "ADM" };
-        var merchantType = new UserType { UserTypeId = 2, Name = "Merchant", Code = "MER" };
-        var supportType = new UserType { UserTypeId = 3, Name = "Support", Code = "SUP" };
-        var customerType = new UserType { UserTypeId = 4, Name = "Customer", Code = "CUST" };
-
-        dbContext.UserTypes.AddRange(adminType, merchantType, supportType, customerType);
-        await dbContext.SaveChangesAsync();
-    }
-
-    if (!await dbContext.UserLevels.AnyAsync())
-    {
-        var superAdminLevel = new UserLevel { UserLevelId = 1, UserTypeId = 1, Name = "SuperAdmin", Code = "SADM" };
-        var storeOwnerLevel = new UserLevel { UserLevelId = 2, UserTypeId = 2, Name = "StoreOwner", Code = "SOWN" };
-        var supportAgentLevel = new UserLevel { UserLevelId = 3, UserTypeId = 3, Name = "SupportAgent", Code = "SAGT" };
-        var customerLevel = new UserLevel { UserLevelId = 4, UserTypeId = 4, Name = "StandardCustomer", Code = "CUST" };
-
-        dbContext.UserLevels.AddRange(superAdminLevel, storeOwnerLevel, supportAgentLevel, customerLevel);
-        await dbContext.SaveChangesAsync();
-    }
-
-    if (!await dbContext.AppUserRoles.AnyAsync())
-    {
-        var adminRole = new UserRole { UserRoleId = 1, UserLevelId = 1, Name = "System Administrator", Sequence = 1 };
-        var storeRole = new UserRole { UserRoleId = 2, UserLevelId = 2, Name = "Store Manager", Sequence = 2 };
-        var supportRole = new UserRole { UserRoleId = 3, UserLevelId = 3, Name = "Support Representative", Sequence = 3 };
-        var customerRole = new UserRole { UserRoleId = 4, UserLevelId = 4, Name = "Customer User", Sequence = 4 };
-
-        dbContext.AppUserRoles.AddRange(adminRole, storeRole, supportRole, customerRole);
-        await dbContext.SaveChangesAsync();
-    }
-
-    // Seed AppUserLogins for all existing Identity users
-    var allUsers = await userManager.Users.ToListAsync();
-    foreach (var u in allUsers)
-    {
-        string userName = u.UserName ?? u.Email ?? "";
-        if (string.IsNullOrWhiteSpace(userName)) continue;
-
-        // Skip if UserName already exists in DB or in local tracker
-        if (await dbContext.AppUserLogins.AnyAsync(l => l.UserName == userName) ||
-            dbContext.AppUserLogins.Local.Any(l => l.UserName == userName))
-        {
-            continue;
-        }
-
-        var userRolesList = await userManager.GetRolesAsync(u);
-        int userTypeId = 4; // Default Customer
-        int userLevelId = 4;
-
-        if (userRolesList.Contains("Admin"))
-        {
-            userTypeId = 1;
-            userLevelId = 1;
-        }
-        else if (userRolesList.Contains("SupportAgent"))
-        {
-            userTypeId = 3;
-            userLevelId = 3;
-        }
-        else if (userRolesList.Contains("FulfillmentStaff"))
-        {
-            userTypeId = 2;
-            userLevelId = 2;
-        }
-
-        var userLogin = new UserLogin
-        {
-            UserName = userName,
-            PasswordHash = u.PasswordHash ?? "",
-            UserTypeId = userTypeId,
-            UserLevelId = userLevelId,
-            UserReferenceId = u.Id,
-            TenantId = "global",
-            IsActive = true,
-            IsDefaultPasswordChange = false,
-            LoginAttemptsCount = 0,
-            CreatedAt = DateTime.UtcNow
-        };
-        dbContext.AppUserLogins.Add(userLogin);
-    }
-    if (dbContext.ChangeTracker.HasChanges())
-    {
-        await dbContext.SaveChangesAsync();
-    }
-
-    // Seed Casbin Rules (Multi-Tenant Domain Matching)
-    var enforcer = scope.ServiceProvider.GetRequiredService<IEnforcer>();
-    string globalTenant = "global";
-
-    // 'g' rules (Level to Role per Tenant)
-    if (!enforcer.HasGroupingPolicy("1", "System Administrator", globalTenant))
-        await enforcer.AddGroupingPolicyAsync("1", "System Administrator", globalTenant);
-
-    if (!enforcer.HasGroupingPolicy("2", "Store Manager", globalTenant))
-        await enforcer.AddGroupingPolicyAsync("2", "Store Manager", globalTenant);
-
-    if (!enforcer.HasGroupingPolicy("3", "Support Representative", globalTenant))
-        await enforcer.AddGroupingPolicyAsync("3", "Support Representative", globalTenant);
-
-    // 'p' rules (Role to Feature per Tenant)
-    if (!enforcer.HasPolicy("System Administrator", globalTenant, "*", "*"))
-    {
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "*", "*");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/all", "read");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/all", "write");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/coupons", "read");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/coupons", "write");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/orders", "read");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/orders", "write");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/analytics", "read");
-        await enforcer.AddPolicyAsync("System Administrator", globalTenant, "@admin/analytics", "write");
-    }
-
-    if (!enforcer.HasPolicy("Store Manager", globalTenant, "@admin/products", "read"))
-    {
-        await enforcer.AddPolicyAsync("Store Manager", globalTenant, "@admin/products", "read");
-        await enforcer.AddPolicyAsync("Store Manager", globalTenant, "@admin/products", "write");
-        await enforcer.AddPolicyAsync("Store Manager", globalTenant, "@admin/orders", "read");
-        await enforcer.AddPolicyAsync("Store Manager", globalTenant, "@admin/orders", "write");
-        await enforcer.AddPolicyAsync("Store Manager", globalTenant, "@admin/coupons", "read");
-        await enforcer.AddPolicyAsync("Store Manager", globalTenant, "@admin/coupons", "write");
-    }
-
-    if (!enforcer.HasPolicy("Support Representative", globalTenant, "@support/tickets", "read"))
-    {
-        await enforcer.AddPolicyAsync("Support Representative", globalTenant, "@support/tickets", "read");
-        await enforcer.AddPolicyAsync("Support Representative", globalTenant, "@support/tickets", "write");
-        await enforcer.AddPolicyAsync("Support Representative", globalTenant, "@admin/orders", "read");
     }
 }
 
