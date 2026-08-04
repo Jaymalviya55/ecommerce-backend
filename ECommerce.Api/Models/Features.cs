@@ -12,9 +12,9 @@ public sealed record Features
     public static readonly Features AdminUserManagement = new("@admin/user-management");
 
     // Warehouse & Support
-    public static readonly Features Fulfillment = new("Fulfillment");
-    public static readonly Features Support = new("Support");
-    public static readonly Features SupportAnalytics = new("Analytics");
+    public static readonly Features Fulfillment = new("@fulfillment/orders");
+    public static readonly Features Support = new("@support/desk");
+    public static readonly Features SupportAnalytics = new("@analytics/view");
 
     private Features(string value)
     {

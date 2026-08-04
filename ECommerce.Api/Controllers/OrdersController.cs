@@ -158,7 +158,8 @@ public class OrdersController : ControllerBase
         return Ok(orders);
     }
 
-    [Authorize(Roles = "Admin,FulfillmentStaff")]
+    [Authorize]
+    [FeatureAuthorization("@fulfillment/orders", "read")]
     [HttpGet("fulfillment")]
     public async Task<IActionResult> GetFulfillmentOrders()
     {
@@ -203,7 +204,8 @@ public class OrdersController : ControllerBase
         return Ok(new { Message = "Order status updated.", Status = newStatus.ToString() });
     }
 
-    [Authorize(Roles = "Admin,FulfillmentStaff")]
+    [Authorize]
+    [FeatureAuthorization("@fulfillment/orders", "write")]
     [HttpPut("{id}/ship")]
     public async Task<IActionResult> ShipOrder(int id, [FromBody] ShipOrderRequest request)
     {
@@ -223,7 +225,8 @@ public class OrdersController : ControllerBase
         return Ok(new { Message = "Order marked as shipped." });
     }
 
-    [Authorize(Roles = "Admin,FulfillmentStaff")]
+    [Authorize]
+    [FeatureAuthorization("@fulfillment/orders", "write")]
     [HttpPut("{id}/deliver")]
     public async Task<IActionResult> DeliverOrder(int id)
     {

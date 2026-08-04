@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.SignalR;
 using ECommerce.Api.Hubs;
 using ECommerce.Api.Services;
 using Microsoft.Extensions.DependencyInjection;
+using ECommerce.Api.MetadataHolder;
 
 [ApiController]
 [Route("api/[controller]")]
@@ -102,7 +103,8 @@ public class TicketsController : ControllerBase
         return Ok(tickets);
     }
 
-    [Authorize(Roles = "Admin,SupportAgent")]
+    [Authorize]
+    [FeatureAuthorization("@support/desk", "read")]
     [HttpGet]
     public async Task<IActionResult> GetAllTickets([FromQuery] string status = "Open")
     {
@@ -130,7 +132,8 @@ public class TicketsController : ControllerBase
         return Ok(tickets);
     }
 
-    [Authorize(Roles = "Admin,SupportAgent")]
+    [Authorize]
+    [FeatureAuthorization("@support/desk", "read")]
     [HttpGet("analytics")]
     public async Task<IActionResult> GetAnalytics()
     {
@@ -390,7 +393,8 @@ public class TicketsController : ControllerBase
         return Ok(new { Message = "Ticket escalated to human agents." });
     }
 
-    [Authorize(Roles = "Admin,SupportAgent")]
+    [Authorize]
+    [FeatureAuthorization("@support/desk", "write")]
     [HttpGet("{id}/draft-reply")]
     public async Task<IActionResult> DraftReply(int id)
     {
@@ -401,7 +405,8 @@ public class TicketsController : ControllerBase
         return Ok(new { Draft = draft });
     }
 
-    [Authorize(Roles = "Admin,SupportAgent")]
+    [Authorize]
+    [FeatureAuthorization("@support/desk", "write")]
     [HttpPut("{id}/resolve")]
     public async Task<IActionResult> ResolveTicket(int id)
     {
@@ -426,7 +431,8 @@ public class TicketsController : ControllerBase
         return Ok(new { Message = "Ticket resolved" });
     }
 
-    [Authorize(Roles = "Admin,SupportAgent")]
+    [Authorize]
+    [FeatureAuthorization("@support/desk", "write")]
     [HttpPut("{id}/claim")]
     public async Task<IActionResult> ClaimTicket(int id)
     {

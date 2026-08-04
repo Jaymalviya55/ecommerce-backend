@@ -3,6 +3,7 @@ using Casbin;
 using ECommerce.Api.MetadataHolder;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 
 namespace ECommerce.Api.Middleware;
 
@@ -44,9 +45,18 @@ public class FeatureAuthorizationMiddleware
             return;
         }
 
+        var dbContext = context.RequestServices.GetRequiredService<ECommerce.Infrastructure.Data.ECommerceDbContext>();
         var roles = context.User.FindAll(ClaimTypes.Role).Select(r => r.Value).ToList();
-        string userLevelId = roles.Contains("Admin") ? "1" : (roles.Contains("SupportAgent") ? "3" : "4");
-        string tenantId = "global";
+        var email = context.User.FindFirst(ClaimTypes.Email)?.Value ?? context.User.Identity?.Name;
+        var userLogin = !string.IsNullOrEmpty(email) 
+            ? await dbContext.AppUserLogins.FirstOrDefaultAsync(ul => ul.UserName == email) 
+            : null;
+
+        string userLevelId = userLogin != null && userLogin.UserLevelId > 0
+            ? userLogin.UserLevelId.ToString()
+            : (roles.Contains("Admin") ? "1" : (roles.Contains("SupportAgent") ? "3" : "4"));
+
+        string tenantId = userLogin?.TenantId ?? "global";
 
         bool isAuthorized = await enforcer.EnforceAsync(userLevelId, tenantId, featureMeta.Feature, featureMeta.Action);
 

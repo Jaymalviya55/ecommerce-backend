@@ -58,8 +58,8 @@ public class AuthController : ControllerBase
         {
             UserName = user.Email,
             PasswordHash = user.PasswordHash ?? "",
-            UserTypeId = 4, // Customer
-            UserLevelId = 4, // StandardCustomer
+            UserTypeId = request.UserTypeId.HasValue && request.UserTypeId.Value > 0 ? request.UserTypeId.Value : 4,
+            UserLevelId = request.UserLevelId.HasValue && request.UserLevelId.Value > 0 ? request.UserLevelId.Value : 4,
             UserReferenceId = user.Id,
             TenantId = "global",
             IsActive = true,
@@ -520,8 +520,15 @@ public class AuthController : ControllerBase
         var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.Identity?.Name;
         var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(r => r.Value).ToList();
 
-        string userLevelId = roles.Contains("Admin") ? "1" : (roles.Contains("SupportAgent") ? "3" : "4");
-        string tenantId = "global";
+        var userLogin = !string.IsNullOrEmpty(email) 
+            ? await _context.AppUserLogins.FirstOrDefaultAsync(ul => ul.UserName == email) 
+            : null;
+
+        string userLevelId = userLogin != null && userLogin.UserLevelId > 0
+            ? userLogin.UserLevelId.ToString()
+            : (roles.Contains("Admin") ? "1" : (roles.Contains("SupportAgent") ? "3" : "4"));
+
+        string tenantId = userLogin?.TenantId ?? "global";
 
         var groupingPolicies = enforcer.GetGroupingPolicy()
             .Select(g => g.ToList())
@@ -530,6 +537,8 @@ public class AuthController : ControllerBase
             .Where(r => !string.IsNullOrEmpty(r))
             .Distinct()
             .ToList();
+
+        var effectiveRoles = roles.Concat(groupingPolicies).Distinct().ToList();
 
         var allPolicies = enforcer.GetPolicy()
             .Select(p => p.ToList())
@@ -551,7 +560,7 @@ public class AuthController : ControllerBase
             UserId = userId,
             Email = email,
             FullName = user != null ? $"{user.FirstName} {user.LastName}".Trim() : email,
-            Roles = roles,
+            Roles = effectiveRoles,
             UserLevelId = userLevelId,
             TenantId = tenantId,
             Permissions = permissions
