@@ -55,17 +55,13 @@ public class UserRoleController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = role.UserRoleId }, role);
     }
 
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] UserRole model)
+    [HttpPatch("{id}/status")]
+    public async Task<IActionResult> ToggleStatus(int id)
     {
         var existing = await _context.AppUserRoles.FindAsync(id);
         if (existing == null) return NotFound("User Role not found.");
 
-        existing.UserLevelId = model.UserLevelId;
-        existing.Name = model.Name;
-        existing.Sequence = model.Sequence;
-        existing.ApplicableToAllSelectedLevelUser = model.ApplicableToAllSelectedLevelUser;
-        existing.IsActive = model.IsActive;
+        existing.IsActive = !existing.IsActive;
 
         await _context.SaveChangesAsync();
         return Ok(existing);
@@ -77,7 +73,7 @@ public class UserRoleController : ControllerBase
         var existing = await _context.AppUserRoles.FindAsync(id);
         if (existing == null) return NotFound("User Role not found.");
 
-        _context.AppUserRoles.Remove(existing);
+        existing.IsActive = false;
         await _context.SaveChangesAsync();
         return Ok(new { Message = "User Role deleted successfully." });
     }

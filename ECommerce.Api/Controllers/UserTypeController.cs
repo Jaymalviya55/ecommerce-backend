@@ -54,14 +54,5 @@ public class UserTypeController : ControllerBase
         return Ok(existing);
     }
 
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(int id)
-    {
-        var existing = await _context.UserTypes.FindAsync(id);
-        if (existing == null) return NotFound("User Type not found.");
 
-        _context.UserTypes.Remove(existing);
-        await _context.SaveChangesAsync();
-        return Ok(new { Message = "User Type deleted successfully." });
-    }
 }

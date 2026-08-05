@@ -54,20 +54,7 @@ public class UserLevelController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = level.UserLevelId }, level);
     }
 
-    [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] UserLevel model)
-    {
-        var existing = await _context.UserLevels.FindAsync(id);
-        if (existing == null) return NotFound("User Level not found.");
 
-        existing.UserTypeId = model.UserTypeId;
-        existing.Name = model.Name;
-        existing.Code = model.Code;
-        existing.IsActive = model.IsActive;
-
-        await _context.SaveChangesAsync();
-        return Ok(existing);
-    }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
@@ -75,7 +62,7 @@ public class UserLevelController : ControllerBase
         var existing = await _context.UserLevels.FindAsync(id);
         if (existing == null) return NotFound("User Level not found.");
 
-        _context.UserLevels.Remove(existing);
+        existing.IsActive = false;
         await _context.SaveChangesAsync();
         return Ok(new { Message = "User Level deleted successfully." });
     }
