@@ -151,8 +151,8 @@ public class CartsController : ControllerBase
         }
         
         // Ensure user hasn't used this coupon already (One-time use per user rule)
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value;
+        var userId = User.FindFirst("uid")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value;
 
         if (!string.IsNullOrEmpty(userId) || !string.IsNullOrEmpty(email))
         {
