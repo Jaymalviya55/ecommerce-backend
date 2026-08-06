@@ -57,6 +57,19 @@ public class WebhooksController : ControllerBase
                     // 6. Update the Order Status to Paid!
                     order.Status = OrderStatus.Paid;
                     order.RazorpayPaymentId = razorpayPaymentId;
+
+                    // 7. Mark user-specific coupons as inactive after successful payment
+                    if (!string.IsNullOrEmpty(order.AppliedCouponCode))
+                    {
+                        var coupon = await _context.Coupons.FirstOrDefaultAsync(c => c.Code == order.AppliedCouponCode);
+                        
+                        // Only deactivate if it's explicitly assigned to a user/email
+                        if (coupon != null && (!string.IsNullOrEmpty(coupon.AssignedToUserId) || !string.IsNullOrEmpty(coupon.AssignedToEmail)))
+                        {
+                            coupon.IsActive = false;
+                        }
+                    }
+
                     await _context.SaveChangesAsync();
                 }
             }
@@ -70,4 +83,4 @@ public class WebhooksController : ControllerBase
             return BadRequest();
         }
     }
-}
+} 

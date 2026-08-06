@@ -32,16 +32,37 @@ public class CouponsController : ControllerBase
     public async Task<IActionResult> GetActiveCoupons()
     {
         var userId = User.FindFirst("uid")?.Value;
-        var userEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userEmail = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
-        var coupons = await _context.Coupons
-            .Where(c => c.IsActive && c.ExpirationDate > DateTime.UtcNow &&
-                        (c.AssignedToUserId == null && c.AssignedToEmail == null ||
-                         c.AssignedToUserId == userId || 
-                         c.AssignedToEmail == userEmail))
+        // Fetch coupons assigned to this user, or global active coupons
+        var couponsQuery = await _context.Coupons
+            .Where(c => (c.IsActive && c.ExpirationDate > DateTime.UtcNow && c.AssignedToUserId == null && c.AssignedToEmail == null) ||
+                        (c.AssignedToUserId == userId || c.AssignedToEmail == userEmail))
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync();
-        return Ok(coupons);
+
+        // Check which coupons the user has already used
+        var usedCouponCodes = await _context.Orders
+            .Where(o => (o.UserId == userId || o.CustomerEmail == userEmail) && o.AppliedCouponCode != null && o.Status != OrderStatus.Cancelled)
+            .Select(o => o.AppliedCouponCode)
+            .Distinct()
+            .ToListAsync();
+
+        var result = couponsQuery.Select(c => new
+        {
+            c.Id,
+            c.Code,
+            c.DiscountPercentage,
+            c.IsActive,
+            c.ExpirationDate,
+            c.MinimumSpend,
+            c.CreatedAt,
+            c.AssignedToUserId,
+            c.AssignedToEmail,
+            IsUsed = !c.IsActive || usedCouponCodes.Contains(c.Code)
+        });
+
+        return Ok(result);
     }
 
     [Authorize]
