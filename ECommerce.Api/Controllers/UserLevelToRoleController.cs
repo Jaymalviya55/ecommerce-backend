@@ -55,7 +55,6 @@ public class UserLevelToRoleController : ControllerBase
         bool added = await _enforcer.AddGroupingPolicyAsync(request.UserLevelId.ToString(), request.UserRoleName, "global");
         if (!added) return BadRequest("Mapping already exists.");
 
-        await _enforcer.SavePolicyAsync();
         return Ok(new { Message = $"Successfully mapped UserLevel {request.UserLevelId} to Role '{request.UserRoleName}'." });
     }
 
@@ -65,7 +64,6 @@ public class UserLevelToRoleController : ControllerBase
         bool removed = await _enforcer.RemoveGroupingPolicyAsync(request.UserLevelId.ToString(), request.UserRoleName, "global");
         if (!removed) return NotFound("Mapping not found.");
 
-        await _enforcer.SavePolicyAsync();
         return Ok(new { Message = "Mapping removed successfully." });
     }
 }

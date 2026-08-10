@@ -49,7 +49,6 @@ public class UserRoleToFeatureController : ControllerBase
         bool added = await _enforcer.AddPolicyAsync(request.UserRoleName, "global", request.FeatureKey, request.Action);
         if (!added) return BadRequest("Policy already exists.");
 
-        await _enforcer.SavePolicyAsync();
         return Ok(new { Message = $"Successfully granted '{request.Action}' right on feature '{request.FeatureKey}' to Role '{request.UserRoleName}'." });
     }
 
@@ -59,7 +58,6 @@ public class UserRoleToFeatureController : ControllerBase
         bool removed = await _enforcer.RemovePolicyAsync(request.UserRoleName, "global", request.FeatureKey, request.Action);
         if (!removed) return NotFound("Policy not found.");
 
-        await _enforcer.SavePolicyAsync();
         return Ok(new { Message = "Policy removed successfully." });
     }
 }

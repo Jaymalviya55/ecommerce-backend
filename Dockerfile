@@ -22,5 +22,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
+ENV DOTNET_USE_POLLING_FILE_WATCHER=true
+ENV DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE=false
+
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "ECommerce.Api.dll"]
